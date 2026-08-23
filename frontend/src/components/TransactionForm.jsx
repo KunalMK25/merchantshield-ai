@@ -61,11 +61,12 @@ export default function TransactionForm({ onSubmit, isSubmitting }) {
         <span className="panel-title">Evaluate a transaction</span>
       </div>
       <div className="panel-body">
-        <div className="mode-toggle">
+        <div className="mode-toggle" role="group" aria-label="Evaluation mode">
           <button
             type="button"
             className={`btn btn-ghost ${mode === "scenario" ? "active" : ""}`}
             onClick={() => setMode("scenario")}
+            aria-pressed={mode === "scenario"}
           >
             Demo scenarios
           </button>
@@ -73,6 +74,7 @@ export default function TransactionForm({ onSubmit, isSubmitting }) {
             type="button"
             className={`btn btn-ghost ${mode === "manual" ? "active" : ""}`}
             onClick={() => setMode("manual")}
+            aria-pressed={mode === "manual"}
           >
             Manual entry
           </button>
@@ -100,47 +102,51 @@ export default function TransactionForm({ onSubmit, isSubmitting }) {
         )}
 
         {mode === "manual" && (
-          <form onSubmit={handleManualSubmit}>
+          <form onSubmit={handleManualSubmit} aria-label="Manual transaction entry">
             <p className="field-hint" style={{ marginBottom: 12 }}>
               Scored as this customer's first observed transaction (no prior history supplied).
             </p>
 
-            {formError && <div className="error-banner">⚠ {formError}</div>}
+            {formError && (
+              <div className="error-banner" role="alert" aria-live="assertive">
+                ⚠ {formError}
+              </div>
+            )}
 
             <div className="field-group">
-              <label className="field-label">Transaction ID</label>
-              <input className="field-input" value={draft.transaction_id}
+              <label className="field-label" htmlFor="txn-transaction-id">Transaction ID</label>
+              <input id="txn-transaction-id" className="field-input" value={draft.transaction_id}
                      onChange={(e) => updateDraft("transaction_id", e.target.value)} />
             </div>
 
             <div className="field-row">
               <div className="field-group">
-                <label className="field-label">Customer ID</label>
-                <input className="field-input" value={draft.customer_id}
+                <label className="field-label" htmlFor="txn-customer-id">Customer ID</label>
+                <input id="txn-customer-id" className="field-input" value={draft.customer_id}
                        onChange={(e) => updateDraft("customer_id", e.target.value)} />
               </div>
               <div className="field-group">
-                <label className="field-label">Merchant ID</label>
-                <input className="field-input" value={draft.merchant_id}
+                <label className="field-label" htmlFor="txn-merchant-id">Merchant ID</label>
+                <input id="txn-merchant-id" className="field-input" value={draft.merchant_id}
                        onChange={(e) => updateDraft("merchant_id", e.target.value)} />
               </div>
             </div>
 
             <div className="field-group">
-              <label className="field-label">Merchant category</label>
-              <input className="field-input" value={draft.merchant_category}
+              <label className="field-label" htmlFor="txn-merchant-category">Merchant category</label>
+              <input id="txn-merchant-category" className="field-input" value={draft.merchant_category}
                      onChange={(e) => updateDraft("merchant_category", e.target.value)} />
             </div>
 
             <div className="field-row">
               <div className="field-group">
-                <label className="field-label">Amount (INR)</label>
-                <input className="field-input" type="number" min="0.01" step="0.01" value={draft.amount}
+                <label className="field-label" htmlFor="txn-amount">Amount (INR)</label>
+                <input id="txn-amount" className="field-input" type="number" min="0.01" step="0.01" value={draft.amount}
                        onChange={(e) => updateDraft("amount", e.target.value)} />
               </div>
               <div className="field-group">
-                <label className="field-label">Payment method</label>
-                <select className="field-select" value={draft.payment_method}
+                <label className="field-label" htmlFor="txn-payment-method">Payment method</label>
+                <select id="txn-payment-method" className="field-select" value={draft.payment_method}
                         onChange={(e) => updateDraft("payment_method", e.target.value)}>
                   {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
@@ -149,20 +155,20 @@ export default function TransactionForm({ onSubmit, isSubmitting }) {
 
             <div className="field-row">
               <div className="field-group">
-                <label className="field-label">Device ID</label>
-                <input className="field-input" value={draft.device_id}
+                <label className="field-label" htmlFor="txn-device-id">Device ID</label>
+                <input id="txn-device-id" className="field-input" value={draft.device_id}
                        onChange={(e) => updateDraft("device_id", e.target.value)} />
               </div>
               <div className="field-group">
-                <label className="field-label">Geo region</label>
-                <input className="field-input" value={draft.geo_region}
+                <label className="field-label" htmlFor="txn-geo-region">Geo region</label>
+                <input id="txn-geo-region" className="field-input" value={draft.geo_region}
                        onChange={(e) => updateDraft("geo_region", e.target.value)} />
               </div>
             </div>
 
             <div className="field-group">
-              <label className="field-label">Status</label>
-              <select className="field-select" value={draft.status}
+              <label className="field-label" htmlFor="txn-status">Status</label>
+              <select id="txn-status" className="field-select" value={draft.status}
                       onChange={(e) => updateDraft("status", e.target.value)}>
                 {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -170,13 +176,13 @@ export default function TransactionForm({ onSubmit, isSubmitting }) {
 
             <div className="field-row">
               <div className="field-group">
-                <label className="field-label">Transaction time</label>
-                <input className="field-input" type="datetime-local" value={draft.timestamp}
+                <label className="field-label" htmlFor="txn-timestamp">Transaction time</label>
+                <input id="txn-timestamp" className="field-input" type="datetime-local" value={draft.timestamp}
                        onChange={(e) => updateDraft("timestamp", e.target.value)} />
               </div>
               <div className="field-group">
-                <label className="field-label">Account created</label>
-                <input className="field-input" type="datetime-local" value={draft.account_created}
+                <label className="field-label" htmlFor="txn-account-created">Account created</label>
+                <input id="txn-account-created" className="field-input" type="datetime-local" value={draft.account_created}
                        onChange={(e) => updateDraft("account_created", e.target.value)} />
               </div>
             </div>

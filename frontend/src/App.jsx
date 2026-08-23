@@ -100,34 +100,36 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-header">
+      <header className="app-header">
         <div>
           <div className="app-title">MerchantShield AI</div>
           <div className="app-subtitle">Fraud risk decision support — Razorpay AI Buildathon 2026, Track 02</div>
         </div>
-      </div>
+      </header>
 
       <StatusBar health={health} modelInfo={modelInfo} healthError={healthError} />
 
-      <div className="main-grid">
-        <TransactionForm onSubmit={handleEvaluate} isSubmitting={evaluateLoading} />
+      <main>
+        <div className="main-grid">
+          <TransactionForm onSubmit={handleEvaluate} isSubmitting={evaluateLoading} />
 
-        <div className="stack">
-          {evaluateError && <ErrorBanner message="Could not evaluate this transaction." detail={evaluateError} />}
-          <RiskResultCard result={result} isLoading={evaluateLoading} />
-          <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} />
+          <div className="stack">
+            {evaluateError && <ErrorBanner message="Could not evaluate this transaction." detail={evaluateError} />}
+            <RiskResultCard result={result} isLoading={evaluateLoading} />
+            <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} />
+          </div>
         </div>
-      </div>
 
-      <div className="stack" style={{ marginTop: 20 }}>
-        <ModelInfoPanel modelInfo={modelInfo} isLoading={modelInfoLoading} error={modelInfoError} />
-        <AuditLogTable
-          entries={auditEntries}
-          isLoading={auditLoading}
-          error={auditError}
-          onRefresh={loadAuditLog}
-        />
-      </div>
+        <div className="stack" style={{ marginTop: 20 }}>
+          <ModelInfoPanel modelInfo={modelInfo} isLoading={modelInfoLoading} error={modelInfoError} />
+          <AuditLogTable
+            entries={auditEntries}
+            isLoading={auditLoading}
+            error={auditError}
+            onRefresh={loadAuditLog}
+          />
+        </div>
+      </main>
     </div>
   );
 }

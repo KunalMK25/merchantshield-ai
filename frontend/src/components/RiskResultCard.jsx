@@ -3,12 +3,12 @@ import { tierFor, RISK_CATEGORY_META, formatPercent } from "../utils/presentatio
 export default function RiskResultCard({ result, isLoading }) {
   if (isLoading) {
     return (
-      <div className="panel">
+      <div className="panel" aria-busy="true" aria-label="Risk decision loading">
         <div className="panel-header"><span className="panel-title">Risk decision</span></div>
         <div className="panel-body">
-          <div className="skeleton" style={{ height: 64, marginBottom: 16 }} />
-          <div className="skeleton" style={{ height: 90, marginBottom: 16 }} />
-          <div className="skeleton" style={{ height: 60 }} />
+          <div className="skeleton" style={{ height: 64, marginBottom: 16 }} aria-hidden="true" />
+          <div className="skeleton" style={{ height: 90, marginBottom: 16 }} aria-hidden="true" />
+          <div className="skeleton" style={{ height: 60 }} aria-hidden="true" />
         </div>
       </div>
     );
@@ -18,7 +18,7 @@ export default function RiskResultCard({ result, isLoading }) {
     return (
       <div className="panel">
         <div className="panel-header"><span className="panel-title">Risk decision</span></div>
-        <div className="empty-state">
+        <div className="empty-state" aria-live="polite">
           Select a demo scenario or enter a transaction to see a risk decision here.
         </div>
       </div>
@@ -29,10 +29,10 @@ export default function RiskResultCard({ result, isLoading }) {
   const categoryMeta = RISK_CATEGORY_META[result.risk_category] || {};
 
   return (
-    <div className="panel">
+    <div className="panel" aria-live="polite" aria-atomic="true">
       <div className="panel-header">
         <span className="panel-title">Risk decision</span>
-        <span className="small text-tertiary mono">{result.transaction_id}</span>
+        <span className="small text-tertiary mono" aria-label={`Transaction ID: ${result.transaction_id}`}>{result.transaction_id}</span>
       </div>
       <div className="panel-body">
         <div className={`action-banner ${tier.tier}`}>

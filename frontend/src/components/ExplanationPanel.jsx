@@ -14,7 +14,9 @@ function ContributionBar({ contribution }) {
           {isIncrease ? "↑ increases risk" : "↓ decreases risk"}
         </span>
       </div>
-      <div className="contribution-bar-track">
+      {/* Bar is a visual representation only; the label text above carries the
+          full meaning for assistive technologies */}
+      <div className="contribution-bar-track" aria-hidden="true">
         <div className="contribution-bar-midline" />
         <div
           className={`contribution-bar-fill ${isIncrease ? "increase" : "decrease"}`}
@@ -28,11 +30,11 @@ function ContributionBar({ contribution }) {
 export default function ExplanationPanel({ explanation, isLoading }) {
   if (isLoading) {
     return (
-      <div className="panel">
+      <div className="panel" aria-busy="true" aria-label="Explanation loading">
         <div className="panel-header"><span className="panel-title">Why this decision</span></div>
         <div className="panel-body">
-          <div className="skeleton" style={{ height: 18, width: "60%", marginBottom: 12 }} />
-          {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 36, marginBottom: 8 }} />)}
+          <div className="skeleton" style={{ height: 18, width: "60%", marginBottom: 12 }} aria-hidden="true" />
+          {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 36, marginBottom: 8 }} aria-hidden="true" />)}
         </div>
       </div>
     );

@@ -5,7 +5,13 @@ export default function AuditLogTable({ entries, isLoading, error, onRefresh }) 
     <div className="panel">
       <div className="panel-header">
         <span className="panel-title">Recent audit log</span>
-        <button type="button" className="btn btn-ghost" onClick={onRefresh} disabled={isLoading}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={onRefresh}
+          disabled={isLoading}
+          aria-label={isLoading ? "Refreshing audit log" : "Refresh audit log"}
+        >
           {isLoading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
@@ -29,6 +35,7 @@ export default function AuditLogTable({ entries, isLoading, error, onRefresh }) 
         {!error && !isLoading && entries && entries.length > 0 && (
           <div style={{ overflowX: "auto" }}>
             <table className="audit-table">
+              <caption className="visually-hidden">Recent risk decisions, most recent first</caption>
               <thead>
                 <tr>
                   <th>Transaction</th>
