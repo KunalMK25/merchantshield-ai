@@ -1,0 +1,44 @@
+:root {
+  /* Surfaces */
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-sunken: #eef0f3;
+  --border: #dde1e7;
+  --border-strong: #c6ccd6;
+
+  /* Text */
+  --text-primary: #11172b;
+  --text-secondary: #545e70;
+  --text-tertiary: #8891a0;
+
+  /* Accent (used sparingly: links, focus, primary actions) */
+  --accent: #2b4fb0;
+  --accent-soft: #e8edfa;
+  --accent-strong: #1f3c8a;
+
+  /* Risk severity -- always paired with an icon + text label, never color alone */
+  --risk-low: #157347;
+  --risk-low-bg: #e5f4ec;
+  --risk-low-border: #b7dfc7;
+
+  --risk-medium: #97640a;
+  --risk-medium-bg: #fbf1de;
+  --risk-medium-border: #eecf9a;
+
+  --risk-high: #b9500f;
+  --risk-high-bg: #fce9dd;
+  --risk-high-border: #f0bd94;
+
+  --risk-critical: #a91c1c;
+  --risk-critical-bg: #fbe4e4;
+  --risk-critical-border: #eeb3b3;
+
+  /* Typography */
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --shadow-sm: 0 1px 2px rgba(17, 23, 43, 0.06);
+  --shadow-md: 0 2px 8px rgba(17, 23, 43, 0.08);
+}
