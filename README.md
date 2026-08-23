@@ -130,8 +130,9 @@ risk is *displayed* can never silently change what *action* is taken.
 | Backend | FastAPI, Pydantic, SQLAlchemy + SQLite |
 | Frontend | React 19, Vite, plain CSS (no UI framework) |
 | Testing | pytest, FastAPI TestClient |
+| Containerisation | Docker (multi-stage build), docker-compose |
 
-No Docker, no Kubernetes, no message queue, no auth layer, no additional databases —
+No Kubernetes, no message queue, no auth layer, no additional databases —
 deliberately, per the project's own "don't overengineer a buildathon prototype"
 principle.
 
@@ -176,6 +177,12 @@ Full threshold sweep, cost-sensitivity analysis (varying FP cost, FN cost, and f
 prevalence), and the reasoning behind every number above are in
 `ml/models/lgbm_v1_metadata.json` and were produced by real, reproducible scripts —
 see [Local setup](#local-setup--running-the-project).
+
+The chart below is the actual precision/recall/F1 and estimated cost vs. threshold
+sweep on the **validation set** (the one used for selection — test set was touched
+only once, after the threshold was frozen):
+
+![Threshold analysis — precision, recall, F1, and cost vs. threshold on the validation set](ml/models/threshold_analysis_chart.png)
 
 ## Explainability
 
@@ -247,14 +254,15 @@ no dependency on, or knowledge of, the Python implementation. Design rationale i
 
 ## Screenshots
 
-No screenshots are committed yet. [`screenshots/README.md`](screenshots/README.md)
-documents exactly what to capture (dashboard overview, one evaluation per risk tier,
-the SHAP explanation panel, the audit trail, and the model metadata panel) and why
-each one matters, so the visual evidence gets added deliberately rather than staged.
-A real chart already in the repo — `ml/models/threshold_analysis_chart.png`, the
-actual precision/recall/cost-vs-threshold sweep from Phase 5 — is separate from
-those UI screenshots and is referenced in
-[Model & evaluation results](#model--evaluation-results) above.
+No UI screenshots are committed yet — none were fabricated for this repository.
+[`screenshots/README.md`](screenshots/README.md) documents exactly what to capture
+(dashboard overview, one evaluation per risk tier, the SHAP explanation panel, the
+audit trail, and the model metadata panel) and why each one matters, so the visual
+evidence gets added deliberately rather than staged.
+
+The threshold analysis chart (`ml/models/threshold_analysis_chart.png`) is already
+shown in [Model & evaluation results](#model--evaluation-results) above — it is the
+real matplotlib output from Phase 5, not a screenshot.
 
 ## Project structure
 
@@ -270,6 +278,10 @@ merchantshield-ai/
 ├── frontend/            # React/Vite dashboard
 ├── tests/               # Full pytest suite (leakage, explainability, decision engine, API)
 ├── docs/                # api.md, decision_engine.md, explainability.md, frontend.md
+├── screenshots/         # Capture guide + UI screenshots (see screenshots/README.md)
+├── Dockerfile           # Multi-stage build: Node frontend + Python runtime
+├── docker-compose.yml   # docker compose up --build to run locally in one command
+├── CONTRIBUTING.md      # Developer workflow: setup, test commands, commit conventions
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -277,18 +289,32 @@ merchantshield-ai/
 
 ## Local setup & running the project
 
-**Prerequisites:** Python 3.12 (developed and tested on 3.12.3), Node.js **20.19+ or
+**Prerequisites:** Python 3.11+ (developed on 3.12.3, CI runs 3.13), Node.js **20.19+ or
 22.12+** (required by Vite 8 — Node 18 is *not* sufficient despite being a common
 baseline elsewhere; verified against the installed `vite` package's `engines` field).
+
+### Option A — Docker (simplest, no local Python/Node required)
+
+```bash
+docker compose up --build
+# Open http://localhost:8000  (dashboard)
+# Open http://localhost:8000/docs  (interactive API docs)
+```
+
+The image builds the frontend, generates the synthetic dataset, and starts the
+backend in one step. Subsequent starts (after the first build) are instant.
+Audit decisions persist across restarts via a named Docker volume (`audit_data`).
+
+### Option B — Local setup
 
 ```bash
 # 1. Install Python dependencies
 pip install -r requirements.txt
 # (add --break-system-packages if pip complains about an externally-managed environment)
 
-# 2. (Optional) regenerate the dataset and retrain -- see "Regenerating the dataset" below.
-#    The repo ships with the frozen model artifact already trained, so this step
-#    isn't required just to run the API/dashboard.
+# 2. Generate the synthetic dataset (required — CSVs are not committed to the repo)
+python3 ml/data/generate_synthetic.py       # writes ml/data/raw_transactions.csv
+python3 ml/features/build_features.py       # writes ml/data/features.csv
 
 # 3. Build the frontend
 cd frontend
@@ -318,16 +344,9 @@ pytest tests/
 ### Regenerating the dataset
 
 The generated CSVs under `ml/data/` are not committed to the repository (they're
-large and fully reproducible) — only the generator source code is tracked. To
-regenerate:
-
-```bash
-python3 ml/data/generate_synthetic.py       # writes ml/data/raw_transactions.csv
-python3 ml/features/build_features.py       # writes ml/data/features.csv
-```
-
-To retrain from scratch (not required to run the API — the frozen model artifact is
-already committed):
+large and fully reproducible) — only the generator source code is tracked. The
+commands above (Option B, step 2) regenerate them. To retrain from scratch (not
+required to run the API — the frozen model artifact is already committed):
 
 ```bash
 python3 ml/training/train_baseline.py
