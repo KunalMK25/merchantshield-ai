@@ -1,0 +1,44 @@
+# MerchantShield AI — Docker build context exclusions
+#
+# Mirrors .gitignore closely, with a few Docker-specific additions.
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+
+# Generated datasets (regenerated during image build via generate_synthetic.py)
+ml/data/*.csv
+
+# SQLite audit database (runtime state, not part of the image)
+backend/data/*.db
+
+# Frontend build output in the source tree (Stage 1 produces its own)
+# and Node dependencies (installed fresh in Stage 1)
+frontend/node_modules/
+frontend/dist/
+
+# Local environment / secrets (never in image)
+.env
+.env.*
+
+# Git history (not needed in image)
+.git/
+.github/
+
+# Editor / OS artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Screenshots (not needed in image)
+screenshots/
+
+# docs (not needed in runtime image -- available at /docs API endpoint instead)
+# (keep this commented out if you want docs/ in the image for reference)
+# docs/

@@ -1,0 +1,35 @@
+# MerchantShield AI — docker-compose
+#
+# QUICK START:
+#   docker compose up --build
+#   Open http://localhost:8000 (dashboard) or http://localhost:8000/docs (API)
+#
+# This starts the production-equivalent container (same image as `docker build`).
+# The data generation and frontend build happen inside the image at build time,
+# not at container start, so `docker compose up` after the first build is instant.
+#
+# For frontend development with live reload, see README.md → "Local setup".
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: merchantshield-ai:latest
+    container_name: merchantshield-api
+    ports:
+      - "8000:8000"
+    # Mount the audit database directory so decisions persist across container
+    # restarts. Without this volume, every `docker compose down && up` starts
+    # with an empty audit log.
+    volumes:
+      - audit_data:/app/backend/data
+    # Restart automatically on crash (not on explicit `docker compose stop`)
+    restart: unless-stopped
+    # Environment variables (none required; see .env.example for reference)
+    # env_file:
+    #   - .env
+
+volumes:
+  audit_data:
+    driver: local
