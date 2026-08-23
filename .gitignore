@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/data/*.db
+.env
+frontend/node_modules/
+frontend/dist/
+
+# Generated synthetic datasets (Phase 1) -- large (tens of MB), fully reproducible
+# via `python3 ml/data/generate_synthetic.py` followed by
+# `python3 ml/features/build_features.py`. The generator and feature-engineering
+# SOURCE CODE remain tracked; only the generated CSV output is excluded.
+ml/data/*.csv
+
+# Trained model artifacts are intentionally tracked (see README) so the frozen
+# model, threshold, and metrics are reproducible/inspectable without retraining.
+# Do not add ml/models/ here.
