@@ -1,8 +1,18 @@
 """
-Phase 1 baseline: Logistic Regression, chronological split, class-weighted.
+Phase 3 baseline: Logistic Regression trained on the chronological split.
 
-No hyperparameter tuning against the test set. No cherry-picking. Test set is
-touched exactly once, at the end, for reporting.
+Establishes the performance floor that all candidate models must beat before
+any is considered for selection (Phase 4). Also defines `chronological_split`,
+which is the project's shared utility for every train/eval script — it is the
+single place where the day-boundary constants (train < day 40, 40 <= val < 50,
+test >= day 50) are applied to the feature DataFrame.
+
+RULES FOLLOWED:
+- No hyperparameter tuning against the test set.
+- No cherry-picking a threshold to improve reported metrics.
+- Test set is touched exactly once, at the very end, for reporting.
+- `chronological_split` is imported (not re-implemented) by every downstream
+  script that needs the same split, so the boundary values can never diverge.
 """
 
 import sys
@@ -23,6 +33,40 @@ from ml.evaluation.cost_model import CostAssumptions, expected_cost
 
 
 def chronological_split(df, train_end_day, val_end_day):
+    """
+    Split a feature DataFrame into train / validation / test sets by simulation day.
+
+    The split is time-ordered, not random, to prevent any time-aware feature
+    (velocity, rolling average, device/geo novelty) from leaking future information
+    into the training set via shuffled rows.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain a 'timestamp' column (parseable by pd.to_datetime).
+    train_end_day : int
+        Exclusive upper bound for the training set, measured in whole days from
+        the earliest timestamp in `df`.  All rows with sim_day < train_end_day
+        are training data.  Default used throughout the project: 40.
+    val_end_day : int
+        Exclusive upper bound for the validation set.  Rows with
+        train_end_day <= sim_day < val_end_day form the validation set.
+        Default used throughout the project: 50.
+
+    Returns
+    -------
+    train, val, test : pd.DataFrame
+        Three non-overlapping, time-ordered DataFrames.  Test contains all rows
+        with sim_day >= val_end_day.
+
+    Notes
+    -----
+    `sim_day` is computed relative to the earliest timestamp in `df`, so the
+    day boundaries are dataset-relative, not calendar-absolute.  This means the
+    same boundary values reproduce the same split across any environment that
+    uses the same synthetic dataset (i.e. any run of generate_synthetic.py with
+    the fixed RNG_SEED=42).
+    """
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     start = df["timestamp"].min().normalize()
