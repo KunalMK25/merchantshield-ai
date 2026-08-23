@@ -10,24 +10,11 @@ from ml.features.build_features import FEATURE_COLUMNS
 from ml.evaluation.explainability import RiskExplainer, build_explanation_text, humanize_contribution
 from ml.evaluation.risk_scoring import probability_to_score, score_to_category, score_transaction
 
+# `model`, `explainer`, and `sample_rows` fixtures are provided at session scope
+# by conftest.py. The constants below are kept for reference but the actual
+# loading is handled once per test session via the shared fixtures.
 MODEL_PATH = "ml/models/candidate_lgbm_v1.pkl"
 FEATURES_PATH = "ml/data/features.csv"
-
-
-@pytest.fixture(scope="module")
-def model():
-    return joblib.load(MODEL_PATH)
-
-
-@pytest.fixture(scope="module")
-def explainer(model):
-    return RiskExplainer(model)
-
-
-@pytest.fixture(scope="module")
-def sample_rows():
-    df = pd.read_csv(FEATURES_PATH)
-    return df.sample(20, random_state=11).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------

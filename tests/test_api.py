@@ -8,15 +8,9 @@ from fastapi.testclient import TestClient
 from backend.main import app
 from backend.services.audit_service import AuditPersistenceError
 
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def client():
-    with TestClient(app) as c:
-        yield c
+# `client` fixture is provided at session scope by conftest.py (loads the model
+# once per test run). All tests in this file receive the same TestClient instance.
+# Tests that temporarily mutate app.state always restore it in a finally block.
 
 
 def _txn(**overrides):
