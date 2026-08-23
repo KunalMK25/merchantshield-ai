@@ -10,6 +10,8 @@ LLM call, and no template that fires without a real contribution behind it. If S
 says a feature didn't matter for this transaction, it does not appear in the output.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import shap
@@ -103,12 +105,36 @@ class RiskExplainer:
 
         raw_prob = float(self.model.predict_proba(X)[0, 1])
 
-        # shap_values in margin (log-odds) space for the positive class, plus expected_value (base)
-        shap_out = self.explainer.shap_values(X)
+        # shap_values in margin (log-odds) space for the positive class, plus expected_value (base).
+        #
+        # OUTPUT FORMAT NOTE (SHAP 0.52 + LightGBM binary classifier):
+        # SHAP 0.52 emits a UserWarning that the output format for LightGBM binary
+        # classifiers "has changed to a list of ndarray". In practice, with the current
+        # pinned versions (shap==0.52.0, lightgbm==4.7.0), shap_values() still returns
+        # a plain ndarray of shape (n_samples, n_features); the warning is
+        # forward-looking. Both branches below are kept for version-compatibility:
+        #   - list branch:   future SHAP where output becomes [neg_class_array, pos_class_array]
+        #   - else branch:   current SHAP where output is a single (n_samples, n_features) ndarray
+        # The warning is suppressed here because it is a known, benign API-migration
+        # notice for a version combination we have already accounted for in code.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="LightGBM binary classifier with TreeExplainer shap values output has changed",
+                category=UserWarning,
+            )
+            shap_out = self.explainer.shap_values(X)
+
         if isinstance(shap_out, list):
-            sv = np.asarray(shap_out[1][0])  # positive class
-            base_value = self.explainer.expected_value[1] if isinstance(self.explainer.expected_value, (list, np.ndarray)) else self.explainer.expected_value
+            # future SHAP: list of [neg_class, pos_class] arrays, each (n_samples, n_features)
+            sv = np.asarray(shap_out[1][0])  # positive class, first (only) sample row
+            base_value = (
+                self.explainer.expected_value[1]
+                if isinstance(self.explainer.expected_value, (list, np.ndarray))
+                else self.explainer.expected_value
+            )
         else:
+            # current SHAP 0.52: plain ndarray (n_samples, n_features); index [0] = first row
             sv = np.asarray(shap_out[0])
             base_value = self.explainer.expected_value
             if isinstance(base_value, (list, np.ndarray)):
