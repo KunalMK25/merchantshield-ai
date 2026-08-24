@@ -472,11 +472,19 @@ class TestAdapterFileHandling:
         with pytest.raises(FileNotFoundError, match="IEEE-CIS transaction file not found"):
             load_raw("/nonexistent/train_transaction.csv")
 
-    def test_missing_identity_file_raises_filenotfounderror(self):
+    def test_missing_identity_file_raises_filenotfounderror(self, tmp_path):
         from ml.external.ieee.ieee_adapter import load_raw
+        # Create a minimal but valid transaction CSV so load_raw() passes the
+        # file-exists check and reaches the identity-file check.
+        # The CSV must contain exactly the columns in _TXN_LOAD_COLS.
+        minimal_txn = tmp_path / "train_transaction.csv"
+        minimal_txn.write_text(
+            "TransactionID,isFraud,TransactionDT,TransactionAmt,"
+            "ProductCD,card1,addr1,D1,D11\n"
+            "1,0,86400,100.0,W,1234,200.0,0.0,30.0\n"
+        )
         with pytest.raises(FileNotFoundError, match="identity file not found"):
-            load_raw(_TXN_PATH if _DATA_AVAILABLE else "/nonexistent/txn.csv",
-                     "/nonexistent/identity.csv")
+            load_raw(str(minimal_txn), str(tmp_path / "nonexistent_identity.csv"))
 
 
 # ---------------------------------------------------------------------------
