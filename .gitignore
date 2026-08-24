@@ -15,3 +15,18 @@ ml/data/*.csv
 # Trained model artifacts are intentionally tracked (see README) so the frozen
 # model, threshold, and metrics are reproducible/inspectable without retraining.
 # Do not add ml/models/ here.
+
+# IEEE-CIS external validation — raw data and generated artifacts
+# The raw IEEE-CIS CSV files must be downloaded locally from Kaggle
+# (https://www.kaggle.com/c/ieee-fraud-detection). They are NOT redistributable
+# and must never be committed to this repository.
+# The experiment result JSONs and the external model are also excluded — they are
+# large, reproducible by running the experiment scripts, and may contain paths
+# specific to the local environment. The SOURCE CODE (adapter, features, split,
+# experiments, tests) is tracked; only outputs are excluded.
+ml/external/ieee/results/
+*.ieee_cis.csv
+train_transaction.csv
+train_identity.csv
+test_transaction.csv
+test_identity.csv

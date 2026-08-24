@@ -18,6 +18,12 @@ PATH SETUP: sys.path manipulation here is redundant alongside the __init__.py
 packages now present in ml/ and tests/, but it remains harmless and ensures
 the project root is importable even when pytest is invoked from outside the
 project root (e.g. `pytest merchantshield-ai/tests/`).
+
+MARKS:
+  integration -- marks tests that require the locally downloaded IEEE-CIS CSV
+                 files (train_transaction.csv, train_identity.csv) and take
+                 several minutes to run. Excluded from the default test run.
+                 Run explicitly with: pytest tests/ -m integration
 """
 
 import os
@@ -40,6 +46,19 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 _MODEL_PATH = os.path.join(_PROJECT_ROOT, "ml", "models", "candidate_lgbm_v1.pkl")
 _FEATURES_PATH = os.path.join(_PROJECT_ROOT, "ml", "data", "features.csv")
+
+
+# ---------------------------------------------------------------------------
+# Custom mark registration
+# ---------------------------------------------------------------------------
+
+def pytest_configure(config):
+    """Register custom marks to avoid PytestUnknownMarkWarning."""
+    config.addinivalue_line(
+        "markers",
+        "integration: marks tests that load full external datasets "
+        "(slow, ~10-15 min, requires local IEEE-CIS data files)",
+    )
 
 
 # ---------------------------------------------------------------------------
