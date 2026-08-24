@@ -56,7 +56,7 @@ python ml/features/build_features.py     # → ml/data/features.csv
 pytest tests/
 ```
 
-The suite has four files:
+The suite has six files:
 
 | File | What it covers | Approximate run time |
 |---|---|---|
@@ -64,6 +64,8 @@ The suite has four files:
 | `test_explainability.py` | SHAP grounding, additivity, determinism, direction correctness | ~20 s |
 | `test_api.py` | Valid requests, every documented error path, audit persistence, no-logic-duplication check | ~15 s |
 | `test_no_leakage.py` | Strictly-prior feature computation verified on sampled customers | ~3 min (reads 213k-row CSV) |
+| `test_ieee_external.py` | IEEE-CIS adapter schema, prohibited column guards, future-leakage prevention, label independence | ~1 min (non-integration); integration tests skipped without data |
+| `test_card_product_features.py` | card_product_share and sibling features — correctness, future-leakage, label independence | ~4 s |
 
 `test_decision_engine.py` and `test_api.py` are fast enough to run on every change.
 `test_no_leakage.py` is slow by nature (it iterates over customer histories) — run
@@ -126,6 +128,8 @@ Both jobs must pass for a PR to be mergeable. Never push a commit that breaks CI
    - `ml/data/*.csv` — generated, not tracked
    - `backend/data/*.db` — runtime state, not tracked
    - `frontend/dist/` — build output, not tracked
+   - `ml/external/ieee/results/` — experiment result JSONs + external model PKL, not tracked
+   - Raw IEEE-CIS CSV files (`train_transaction.csv`, `train_identity.csv`) — never commit
    - `__pycache__/`, `*.pyc` — never tracked
 4. **No secrets.** Never commit `.env` files, API keys, or credentials. The
    `.env.example` documents what variables exist but contains no real values.
@@ -233,3 +237,5 @@ Most "why is it done this way?" questions are answered in the `docs/` directory:
 - `docs/decision_engine.md` — why rule-based (not ML), boundary semantics, SHAP isolation
 - `docs/explainability.md` — why TreeExplainer, the additivity check, SHAP limitations
 - `docs/frontend.md` — decoupling from backend, demo scenario verification, action-tier display
+- `docs/external_validation_ieee_cis.md` — IEEE-CIS dataset, Experiment A (frozen transfer), Experiment B (retrain), PARTIAL TRANSFER conclusion, full feature-compatibility analysis
+- `docs/phase15_card_product_experiment.md` — card_product_share feature, ablation results, leakage proof, test-set evaluation

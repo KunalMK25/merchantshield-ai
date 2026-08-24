@@ -189,14 +189,15 @@ this is the intentional score/policy independence described above, not an error.
 
 ## Test count and results
 
-`tests/test_decision_engine.py`: **50/50 passing**, covering all 12 required
-categories from the brief plus additional boundary/edge cases (amount-escalation
-boundaries, bool-as-probability rejection, immutability, fail-safe behavior under a
-monkeypatched broken policy table).
+`tests/test_decision_engine.py`: **51 tests passing**, covering all policy branches,
+exact boundary conditions, fail-safe behavior under a monkeypatched broken policy
+table, bool-as-probability rejection, and structural proof that SHAP cannot alter the
+action.
 
-Full project test suite (`tests/`): **79/79 passing** (3 leakage sanity checks +
-26 explainability tests + 50 decision engine tests) — no regressions introduced in
-frozen components.
+Full project test suite (`tests/`): **203 non-integration tests passing** across 6
+test files — decision engine, explainability, API, leakage sanity, IEEE-CIS adapter,
+and card-product features. 5 additional integration tests require the local IEEE-CIS
+dataset and are automatically skipped in CI.
 
 ## Edge cases discovered during implementation
 
