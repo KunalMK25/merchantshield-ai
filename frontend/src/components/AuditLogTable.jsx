@@ -11,68 +11,83 @@ export default function AuditLogTable({ entries, isLoading, error, onRefresh }) 
           onClick={onRefresh}
           disabled={isLoading}
           aria-label={isLoading ? "Refreshing audit log" : "Refresh audit log"}
+          style={{ padding: "4px 10px", fontSize: 12 }}
         >
-          {isLoading ? "Refreshing…" : "Refresh"}
+          {isLoading ? "Refreshing…" : "↻ Refresh"}
         </button>
       </div>
-      <div className="panel-body" style={{ padding: 0 }}>
-        {error && (
-          <div className="error-banner" style={{ margin: 18 }}>
-            ⚠ Could not load audit log: {error}
-          </div>
-        )}
 
-        {!error && isLoading && (
-          <div style={{ padding: 18 }}>
-            {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 32, marginBottom: 8 }} />)}
-          </div>
-        )}
+      {error && (
+        <div className="panel-body">
+          <p className="small text-tertiary">Could not load audit log: {error}</p>
+        </div>
+      )}
 
-        {!error && !isLoading && (!entries || entries.length === 0) && (
-          <div className="empty-state">No decisions recorded yet. Evaluate a transaction to populate the audit log.</div>
-        )}
+      {!error && !isLoading && (!entries || entries.length === 0) && (
+        <div className="empty-state">
+          No decisions recorded yet. Evaluate a transaction to populate the log.
+        </div>
+      )}
 
-        {!error && !isLoading && entries && entries.length > 0 && (
-          <div style={{ overflowX: "auto" }}>
-            <table className="audit-table">
-              <caption className="visually-hidden">Recent risk decisions, most recent first</caption>
-              <thead>
-                <tr>
-                  <th>Transaction</th>
-                  <th>Source</th>
-                  <th>Decision</th>
-                  <th>Probability</th>
-                  <th>Risk</th>
-                  <th>Rule</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => {
-                  const tier = tierFor(entry.action);
-                  return (
-                    <tr key={entry.request_id}>
-                      <td className="mono">{shortId(entry.transaction_id)}</td>
-                      <td>
-                        <span className="small text-secondary">
-                          {entry.source === "demo" ? "Demo" : "Manual"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`action-chip ${tier.tier}`}>{entry.action}</span>
-                      </td>
-                      <td className="mono">{formatPercent(entry.fraud_probability)}</td>
-                      <td>{entry.risk_category}</td>
-                      <td className="mono small">{entry.policy_rule_id}</td>
-                      <td className="small text-secondary">{formatTimestamp(entry.decision_timestamp)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {!error && !isLoading && entries && entries.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="audit-table">
+            <caption className="visually-hidden">Recent risk decisions, most recent first</caption>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Transaction</th>
+                <th>Action</th>
+                <th>Probability</th>
+                <th>Score</th>
+                <th>Rule</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(e => {
+                const tier = tierFor(e.action);
+                return (
+                  <tr key={e.id}>
+                    <td style={{ whiteSpace: "nowrap", color: "var(--text-tertiary)", fontSize: 11.5 }}>
+                      {formatTimestamp(e.decided_at)}
+                    </td>
+                    <td>
+                      <span className="mono" style={{ fontSize: 11.5 }}>
+                        {shortId(e.transaction_id)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`action-chip ${tier.tier}`}>
+                        <span aria-hidden="true">{tier.icon}</span>
+                        {tier.label}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="prob-value">
+                        {formatPercent(e.fraud_probability)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="mono" style={{ fontSize: 12 }}>{e.risk_score ?? "—"}</span>
+                    </td>
+                    <td>
+                      <span className="mono" style={{ fontSize: 10.5, color: "var(--text-tertiary)" }}>
+                        {e.policy_rule_id || "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="source-tag">
+                        {e.source || "manual"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

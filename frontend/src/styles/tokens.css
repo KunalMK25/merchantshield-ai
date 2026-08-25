@@ -1,51 +1,81 @@
 :root {
-  /* Surfaces */
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --surface-sunken: #eef0f3;
-  --border: #dde1e7;
-  --border-strong: #c6ccd6;
+  /* ── Surfaces ────────────────────────────────────────────────── */
+  --bg:              #f0f2f5;
+  --surface:         #ffffff;
+  --surface-raised:  #ffffff;
+  --surface-sunken:  #f5f7fa;
+  --surface-inset:   #eef0f4;
+  --border:          #dde1ea;
+  --border-strong:   #c4cad6;
+  --border-subtle:   #e8eaef;
 
-  /* Text */
-  --text-primary: #11172b;
-  --text-secondary: #545e70;
-  --text-tertiary: #8891a0;
+  /* ── Text ────────────────────────────────────────────────────── */
+  --text-primary:   #0f1624;
+  --text-secondary: #4a5568;
+  --text-tertiary:  #8492a6;
+  --text-inverse:   #ffffff;
 
-  /* Accent (used sparingly: links, focus, primary actions) */
-  --accent: #2b4fb0;
-  --accent-soft: #e8edfa;
-  --accent-strong: #1f3c8a;
+  /* ── Brand accent ────────────────────────────────────────────── */
+  --accent:           #2563eb;
+  --accent-soft:      #dbeafe;
+  --accent-strong:    #1d4ed8;
+  --accent-muted:     #eff6ff;
 
-  /* Risk severity -- always paired with an icon + text label, never color alone */
-  --risk-low: #157347;
-  --risk-low-bg: #e5f4ec;
-  --risk-low-border: #b7dfc7;
+  /* ── Risk severity (always paired with icon + text, never color alone) ─ */
+  --risk-low:            #16a34a;
+  --risk-low-bg:         #f0fdf4;
+  --risk-low-border:     #bbf7d0;
+  --risk-low-muted:      #dcfce7;
 
-  --risk-medium: #97640a;
-  --risk-medium-bg: #fbf1de;
-  --risk-medium-border: #eecf9a;
+  --risk-medium:         #d97706;
+  --risk-medium-bg:      #fffbeb;
+  --risk-medium-border:  #fde68a;
+  --risk-medium-muted:   #fef3c7;
 
-  --risk-high: #b9500f;
-  --risk-high-bg: #fce9dd;
-  --risk-high-border: #f0bd94;
+  --risk-high:           #ea580c;
+  --risk-high-bg:        #fff7ed;
+  --risk-high-border:    #fed7aa;
+  --risk-high-muted:     #ffedd5;
 
-  --risk-critical: #a91c1c;
-  --risk-critical-bg: #fbe4e4;
-  --risk-critical-border: #eeb3b3;
+  --risk-critical:       #dc2626;
+  --risk-critical-bg:    #fef2f2;
+  --risk-critical-border:#fecaca;
+  --risk-critical-muted: #fee2e2;
 
-  /* Typography */
-  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* ── Typography ──────────────────────────────────────────────── */
+  --font-ui:   "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --shadow-sm: 0 1px 2px rgba(17, 23, 43, 0.06);
-  --shadow-md: 0 2px 8px rgba(17, 23, 43, 0.08);
+  /* ── Shape ───────────────────────────────────────────────────── */
+  --radius-xs:  3px;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+
+  /* ── Elevation ───────────────────────────────────────────────── */
+  --shadow-xs:  0 1px 2px rgba(15, 22, 36, 0.05);
+  --shadow-sm:  0 1px 4px rgba(15, 22, 36, 0.07), 0 1px 2px rgba(15, 22, 36, 0.04);
+  --shadow-md:  0 4px 12px rgba(15, 22, 36, 0.08), 0 2px 4px rgba(15, 22, 36, 0.05);
+  --shadow-lg:  0 8px 24px rgba(15, 22, 36, 0.10), 0 4px 8px rgba(15, 22, 36, 0.06);
+
+  /* ── Spacing scale ───────────────────────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+
+  /* ── Animation ───────────────────────────────────────────────── */
+  --transition-fast:   0.12s ease;
+  --transition-base:   0.18s ease;
+  --transition-slow:   0.28s ease;
 }
 
-/* Visually hidden — accessible to screen readers, invisible on screen.
-   Used for table captions and other labels that need AT announcement
-   without disrupting the visual layout. */
+/* Visually hidden — accessible to screen readers, invisible on screen */
 .visually-hidden {
   position: absolute;
   width: 1px;

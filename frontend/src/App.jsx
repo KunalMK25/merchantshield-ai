@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError } from "./api/client";
-import StatusBar from "./components/StatusBar";
 import TransactionForm from "./components/TransactionForm";
 import RiskResultCard from "./components/RiskResultCard";
 import ExplanationPanel from "./components/ExplanationPanel";
@@ -77,9 +76,9 @@ export default function App() {
     setExplanation(null);
     try {
       // /risk/evaluate: the authoritative decision (runs the decision engine + audit write)
-      // /risk/explain: the same underlying model/SHAP computation, used here only to obtain
-      //   the raw per-feature contributions for the visual breakdown -- both calls hit the
-      //   real, existing endpoints; nothing is duplicated or recomputed client-side.
+      // /risk/explain: same underlying model/SHAP computation, used to obtain raw
+      //   per-feature contributions for the visual breakdown — both call real endpoints;
+      //   nothing is duplicated or recomputed client-side.
       const [evaluateResult, explainResult] = await Promise.all([
         api.evaluateTransaction(payload),
         api.explainTransaction(payload),
@@ -92,36 +91,100 @@ export default function App() {
       });
       loadAuditLog();
     } catch (err) {
-      setEvaluateError(err instanceof ApiError ? err.message : "Unexpected error while evaluating the transaction.");
+      setEvaluateError(
+        err instanceof ApiError
+          ? err.message
+          : "Unexpected error while evaluating the transaction."
+      );
     } finally {
       setEvaluateLoading(false);
     }
   }
 
+  const isOk = health?.status === "ok" && health?.model_loaded;
+  const modelVersion = health?.model_version || modelInfo?.model_version || "—";
+  const threshold = modelInfo?.decision_threshold ?? "—";
+
   return (
     <div className="app-shell">
+      {/* ── Header ───────────────────────────────────────────────── */}
       <header className="app-header">
-        <div>
+        <div className="header-brand">
           <div className="app-title">MerchantShield AI</div>
-          <div className="app-subtitle">Fraud risk decision support — Razorpay AI Buildathon 2026, Track 02</div>
+          <div className="app-tagline">Fraud risk decision support</div>
+          <div className="app-event-badge" aria-label="Razorpay AI Buildathon 2026, Track 02">
+            Razorpay AI Buildathon 2026 · Track 02
+          </div>
+        </div>
+
+        <div className="header-status">
+          <div className="header-status-pill" role="status">
+            <span
+              className={`header-status-dot ${
+                healthError ? "degraded" : isOk ? "ok" : "degraded"
+              }`}
+              aria-hidden="true"
+            />
+            <span className="header-status-label">
+              {healthError ? "Unreachable" : isOk ? "Operational" : "Degraded"}
+            </span>
+          </div>
+          <div className="header-status-meta" aria-label="System metadata">
+            <span className="header-status-item">
+              Model: <strong className="mono">{modelVersion}</strong>
+            </span>
+            <span className="header-status-item">
+              Threshold: <strong className="mono">{threshold}</strong>
+            </span>
+            {modelInfo?.test_metrics_at_frozen_threshold && (
+              <>
+                <span className="header-status-item">
+                  Precision:{" "}
+                  <strong className="mono">
+                    {(modelInfo.test_metrics_at_frozen_threshold.precision * 100).toFixed(1)}%
+                  </strong>
+                </span>
+                <span className="header-status-item">
+                  Recall:{" "}
+                  <strong className="mono">
+                    {(modelInfo.test_metrics_at_frozen_threshold.recall * 100).toFixed(1)}%
+                  </strong>
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
-      <StatusBar health={health} modelInfo={modelInfo} healthError={healthError} />
-
       <main>
+        {/* ── Context bar ──────────────────────────────────────────── */}
+        <p className="context-bar">
+          Evaluate transaction risk, understand why the model flagged it, and record the decision.
+        </p>
+
+        {/* ── Evaluation grid ──────────────────────────────────────── */}
         <div className="main-grid">
           <TransactionForm onSubmit={handleEvaluate} isSubmitting={evaluateLoading} />
 
           <div className="stack">
-            {evaluateError && <ErrorBanner message="Could not evaluate this transaction." detail={evaluateError} />}
+            {evaluateError && (
+              <ErrorBanner
+                message="Could not evaluate this transaction."
+                detail={evaluateError}
+              />
+            )}
             <RiskResultCard result={result} isLoading={evaluateLoading} />
             <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} />
           </div>
         </div>
 
-        <div className="stack" style={{ marginTop: 20 }}>
-          <ModelInfoPanel modelInfo={modelInfo} isLoading={modelInfoLoading} error={modelInfoError} />
+        {/* ── Bottom panels ────────────────────────────────────────── */}
+        <div className="stack" style={{ marginTop: 24 }}>
+          <ModelInfoPanel
+            modelInfo={modelInfo}
+            isLoading={modelInfoLoading}
+            error={modelInfoError}
+          />
           <AuditLogTable
             entries={auditEntries}
             isLoading={auditLoading}

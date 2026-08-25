@@ -1,12 +1,17 @@
 export default function ErrorBanner({ message, detail }) {
-  if (!message) return null;
   return (
-    <div className="error-banner">
-      <span aria-hidden="true">⚠</span>
-      <span>
-        {message}
-        {detail && typeof detail === "string" && <div className="small" style={{ marginTop: 4 }}>{detail}</div>}
-      </span>
+    <div
+      className="error-banner"
+      role="alert"
+      aria-live="assertive"
+    >
+      <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>⚠</span>
+      <div>
+        <strong>{message}</strong>
+        {detail && (
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>{detail}</div>
+        )}
+      </div>
     </div>
   );
 }
