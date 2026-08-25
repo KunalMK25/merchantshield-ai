@@ -48,6 +48,15 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+# Install system runtime dependencies required by LightGBM.
+# libgomp1 provides the GNU OpenMP runtime (libgomp.so.1) which LightGBM's
+# compiled C++ extension links against. python:3.13-slim (Debian Bookworm slim)
+# does not include it by default, causing an OSError at import/load time.
+# Placed before pip install so this layer is cached independently of Python deps.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies (layer-cached until requirements.txt changes)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
