@@ -24,9 +24,16 @@ ml/data/*.csv
 # large, reproducible by running the experiment scripts, and may contain paths
 # specific to the local environment. The SOURCE CODE (adapter, features, split,
 # experiments, tests) is tracked; only outputs are excluded.
+#
+# Data location is controlled by the IEEE_DATA_DIR environment variable.
+# Default: C:/Users/user/Downloads/ieee_cis_inspect (or any local path outside
+# the repo). If data is accidentally placed inside the repo, these rules catch it.
 ml/external/ieee/results/
 *.ieee_cis.csv
 train_transaction.csv
 train_identity.csv
 test_transaction.csv
 test_identity.csv
+# Phase 17 model artifact (reproducible by re-running razorpay_validation.py)
+phase17_lgbm.pkl
+phase17_razorpay_results.json

@@ -289,8 +289,52 @@ Low precision (6.6%) is structurally explained by the 3.5% prevalence ceiling an
 two absent features. The frozen model does not transfer — the synthetic and real
 distributions are too different.
 
-Full analysis, root-cause diagnosis, and feature ablation are in
-[`docs/external_validation_ieee_cis.md`](docs/external_validation_ieee_cis.md) and
+### Phase 17 — Held-out real-data evaluation (Razorpay submission)
+
+Phase 17 provides the canonical held-out evaluation answering the Razorpay AI Risk
+Manager track requirement: *"measured precision and recall on a held-out test set,
+including false-positive cost."*
+
+A fresh LightGBM was trained on the IEEE-CIS training split (16 features: 15 base +
+`card_product_share`) and evaluated **exactly once** on the held-out test split
+(118,108 transactions, days 140–182) after threshold selection on validation only:
+
+| Metric | Value |
+|---|---|
+| ROC-AUC | **0.771** |
+| PR-AUC | **0.128** |
+| Precision | **0.063** |
+| Recall | **0.798** |
+| F1 | **0.117** |
+| Fraud caught (TP) | 3,243 of 4,064 **(79.8%)** |
+| False positives (FP) | 48,139 |
+| FP:TP ratio | 14.8 |
+| False positive rate | 42.2% |
+| Expected cost | 2,469,531 cost units |
+| Selected threshold | 0.35 (val cost-min, recall ≥ 80%) |
+
+**Confusion matrix (held-out test set):**
+
+| | Predicted legitimate | Predicted fraud |
+|---|---|---|
+| **Actually legitimate** | 65,905 (TN) | 48,139 (FP) |
+| **Actually fraud** | 821 (FN) | 3,243 (TP) |
+
+**Low precision (6.3%) explained honestly:** The 3.5% fraud prevalence sets a
+structural ceiling; two key fraud signals (device novelty, failure-transaction ratio)
+are absent from IEEE-CIS; and IEEE-CIS label propagation adds noise. This is not a
+model failure — it is a data-compatibility constraint documented in full.
+
+**The IEEE-CIS data is not committed to this repository.** Set `IEEE_DATA_DIR` to
+reproduce:
+```bash
+export IEEE_DATA_DIR=/path/to/ieee_cis_data
+python ml/external/ieee/razorpay_validation.py
+```
+
+Full analysis in
+[`docs/phase17_razorpay_real_data_validation.md`](docs/phase17_razorpay_real_data_validation.md),
+[`docs/external_validation_ieee_cis.md`](docs/external_validation_ieee_cis.md), and
 [`docs/phase15_card_product_experiment.md`](docs/phase15_card_product_experiment.md).
 
 ## Audit trail
@@ -346,12 +390,15 @@ merchantshield-ai/
 │   ├── training/         # Baseline + candidate training scripts
 │   ├── evaluation/       # Cost model, threshold analysis, risk scoring, SHAP, decision engine
 │   ├── models/           # Frozen model artifacts + metadata (committed to Git)
-│   └── external/         # External validation track (IEEE-CIS, Phase 14–15)
-│       └── ieee/         # Adapter, feature builder, split, experiments A+B, card-product features
+│   └── external/         # External validation track (IEEE-CIS, Phases 14–17)
+│       └── ieee/         # Adapter, features, split, experiments A+B,
+│                         #   card_product_features (Phase 15),
+│                         #   razorpay_validation.py (Phase 17 — canonical held-out)
 ├── frontend/             # React/Vite dashboard
 ├── tests/                # pytest suite: leakage, explainability, decision engine, API,
-│                         #   IEEE-CIS adapter/features, card-product features
+│                         #   IEEE-CIS adapter/features, card-product, Phase 17 validation
 ├── docs/                 # Technical documentation and experiment reports
+│                         #   (see docs/README.md for index)
 ├── screenshots/          # Capture guide (no screenshots committed)
 ├── Dockerfile            # Multi-stage build: Node frontend + Python runtime
 ├── docker-compose.yml    # docker compose up --build
@@ -442,8 +489,9 @@ prevention, label independence), and card-product familiarity features (35 tests
 | `test_no_leakage.py` | Strictly-prior feature computation on 213k-row CSV | ~3 min |
 | `test_ieee_external.py` | IEEE-CIS adapter, features, split, leakage guards | ~1 min (non-integration) |
 | `test_card_product_features.py` | card_product_share and sibling features | ~4 s |
+| `test_phase17_validation.py` | Phase 17 pipeline: scoring, threshold selection, feature contract, result schema | ~13 s |
 
-**Current test count: 203 non-integration tests passing** (run `pytest tests/` — 5
+**Current test count: 246 non-integration tests passing** (run `pytest tests/` — 6
 integration tests require the local IEEE-CIS CSV files and are automatically skipped
 in CI). CI runs the full suite on every push to `main`.
 
@@ -454,12 +502,14 @@ in CI). CI runs the full suite on every push to `main`.
 
 ## Limitations / prototype scope
 
-- **Synthetic data only.** All MerchantShield v1 metrics are on generator-controlled
-  synthetic data. No real payment data was used or claimed.
-- **Partial external transfer.** The retrained external model achieves ROC-AUC 0.771
-  on IEEE-CIS, but the frozen production model does not transfer (ROC-AUC 0.443,
-  inverted ranking). The feature distributions are too different across datasets. See
-  [External validation](#external-validation--ieee-cis).
+- **Synthetic data only for production model.** All MerchantShield v1 metrics are on
+  generator-controlled synthetic data. No real payment data was used or claimed.
+- **Partial external transfer on real data.** The retrained external model achieves
+  ROC-AUC 0.771 and 79.8% recall on IEEE-CIS real-world e-commerce data, but precision
+  is 6.3% at the selected operating point. The frozen production model does not transfer
+  (ROC-AUC 0.443). See [External validation](#external-validation--ieee-cis).
+- **Not Razorpay data.** The real-data evaluation uses IEEE-CIS (Vesta Corporation
+  US e-commerce). Not UPI, not POS, not Indian merchant transactions.
 - **No authentication.** The API and dashboard have no login/access control.
 - **No live transaction store.** Prior transaction history must be supplied per-request
   by the caller — there is no live customer database.
