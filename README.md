@@ -279,6 +279,10 @@ MerchantShield's feature engineering approach (13 of 15 features computable; 2 f
 | Expected cost | 2,763,187 | **2,294,373** (−17.0%) |
 | FP:TP ratio | 16.6 | **14.1** |
 
+† Phase 15 used a 0.05-step threshold sweep; Phase 17 used a 0.01-step sweep — same
+methodology, higher resolution. Minor metric differences (e.g. threshold 0.37 vs 0.35)
+reflect this, not a change in approach.
+
 Phase 15 added `card_product_share` (fraction of a card's prior transactions in the
 current product category) — the 3rd most important feature by gain, reducing FP by
 18% and cost by 17%.
@@ -319,6 +323,8 @@ A fresh LightGBM was trained on the IEEE-CIS training split (16 features: 15 bas
 |---|---|---|
 | **Actually legitimate** | 65,905 (TN) | 48,139 (FP) |
 | **Actually fraud** | 821 (FN) | 3,243 (TP) |
+
+> *IEEE-CIS is US e-commerce data from Vesta Corporation, not Razorpay/UPI/POS transactions.*
 
 **Low precision (6.3%) explained honestly:** The 3.5% fraud prevalence sets a
 structural ceiling; two key fraud signals (device novelty, failure-transaction ratio)
