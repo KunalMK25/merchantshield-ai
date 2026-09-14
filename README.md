@@ -68,6 +68,13 @@ into a bounded, auditable action.
 - **External validation** — the model and methodology were tested against the
   IEEE-CIS Fraud Detection dataset (real Vesta chargeback data). See
   [External validation](#external-validation--ieee-cis) for the honest results.
+- **(V2) Historical transaction context** — optional prior transaction history enables
+  behavioral pattern analysis; signal quality indicator (`MINIMAL`/`LIMITED`/`MODERATE`/`ESTABLISHED`)
+  communicates confidence. Cold-start transactions explicitly flagged.
+- **(V2) Model output hardening** — all model probabilities validated for finiteness and
+  range; engineered features checked for pathological bounds (velocity spikes, extreme z-scores).
+- **(V2) Idempotent schema migration** — audit persistence layer supports legacy database
+  upgrades without data loss; prior_transaction_count column added safely to existing deployments.
 
 ## Architecture
 
@@ -485,19 +492,22 @@ customers), SHAP grounding/additivity/determinism, decision engine (all policy
 branches, exact boundary conditions, fail-safe behavior, proof SHAP cannot alter the
 action), API (valid requests, every documented error path, audit failure isolation),
 IEEE-CIS adapter/features/split (schema, prohibited columns, future-leakage
-prevention, label independence), and card-product familiarity features (35 tests).
+prevention, label independence), card-product familiarity features (35 tests), and V2
+hardening (model output validation, feature bounds checking, signal quality grading,
+prior transaction context, schema migration).
 
 | Test file | Focus | Notes |
 |---|---|---|
 | `test_decision_engine.py` | All policy branches, boundary cases, fail-safe | ~1 s |
 | `test_explainability.py` | SHAP grounding, additivity, determinism | ~20 s |
 | `test_api.py` | Full API contract, every error path, audit isolation | ~15 s |
+| `test_v2_hardening.py` | **(V2)** Model validation, feature bounds, signal quality, schema migration | ~5 s |
 | `test_no_leakage.py` | Strictly-prior feature computation on 213k-row CSV | ~3 min |
 | `test_ieee_external.py` | IEEE-CIS adapter, features, split, leakage guards | ~1 min (non-integration) |
 | `test_card_product_features.py` | card_product_share and sibling features | ~4 s |
 | `test_phase17_validation.py` | Phase 17 pipeline: scoring, threshold selection, feature contract, result schema | ~13 s |
 
-**Current test count: 246 non-integration tests passing** (run `pytest tests/` — 6
+**Current test count: 269 non-integration tests passing** (run `pytest tests/` — 10
 integration tests require the local IEEE-CIS CSV files and are automatically skipped
 in CI). CI runs the full suite on every push to `main`.
 
@@ -519,7 +529,12 @@ in CI). CI runs the full suite on every push to `main`.
 - **No authentication.** The API and dashboard have no login/access control.
 - **No live transaction store.** Prior transaction history must be supplied per-request
   by the caller — there is no live customer database.
+- **Cold-start transactions.** Customers with no prior history are scored neutrally
+  (behavioral features = 0); signal quality is explicitly `MINIMAL` and flagged in
+  the UI. (V2) Mitigated by signal quality indicators; production would add
+  population-level behavior.
 - **SQLite audit storage.** Appropriate for a prototype; not a production audit solution.
+  (V2) Includes idempotent schema migration for legacy deployments.
 - **ALLOW_WITH_MONITORING is a policy label.** No background monitoring service exists.
 - **No real payment integration.** Every action is a recommendation label returned as
   data. The system cannot move money or freeze accounts.
