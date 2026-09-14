@@ -6,7 +6,7 @@ from backend.schemas.response import (
     RiskEvaluateResponse, ContributionItem,
 )
 from backend.services import risk_service
-from backend.services.risk_service import FeatureGenerationError
+from backend.services.risk_service import FeatureGenerationError, ModelOutputError
 from backend.services.audit_service import AuditPersistenceError
 from ml.evaluation.decision_engine import InvalidTransactionError
 from ml.features.build_features import FEATURE_COLUMNS
@@ -65,7 +65,7 @@ def risk_score(payload: RiskRequest, request: Request):
     bundle = _get_bundle_or_503(request)
     try:
         result = risk_service.score_only(bundle, payload)
-    except FeatureGenerationError as e:
+    except (FeatureGenerationError, risk_service.ModelOutputError) as e:
         raise HTTPException(status_code=422, detail=str(e))
     return RiskScoreResponse(**result)
 
@@ -81,7 +81,7 @@ def risk_explain(payload: RiskRequest, request: Request):
     bundle = _get_bundle_or_503(request)
     try:
         result = risk_service.explain_only(bundle, payload)
-    except FeatureGenerationError as e:
+    except (FeatureGenerationError, risk_service.ModelOutputError) as e:
         raise HTTPException(status_code=422, detail=str(e))
     result["contributions"] = [ContributionItem(**c) for c in result["contributions"]]
     return RiskExplainResponse(**result)
@@ -91,17 +91,20 @@ def risk_explain(payload: RiskRequest, request: Request):
              summary="Full risk decision (score + explain + decide + audit)",
              description="The complete pipeline: feature engineering -> LightGBM inference -> "
                          "risk score/category -> SHAP explanation -> deterministic decision "
-                         "engine -> audit persistence. This is the endpoint a real integration "
-                         "should call for an actual risk decision on a transaction. If audit "
-                         "persistence fails, the decision is still returned "
-                         "(audit_persisted=false) rather than losing the risk decision -- see "
-                         "docs/api.md for the failure-recovery rationale.")
+                         "engine -> audit persistence. The decision is computed independently "
+                         "of SHAP; if explanation generation fails, the decision is still "
+                         "returned with explanation_available=false. If audit persistence fails, "
+                         "the decision is still returned (audit_persisted=false) rather than "
+                         "losing the risk decision -- see docs/api.md for the failure-recovery "
+                         "rationale.")
 def risk_evaluate(payload: RiskRequest, request: Request):
     bundle = _get_bundle_or_503(request)
 
     try:
-        decision, explanation, request_id = risk_service.evaluate_full(bundle, payload)
+        decision, explanation, request_id, prior_txn_count, explanation_error = risk_service.evaluate_full(bundle, payload)
     except FeatureGenerationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except risk_service.ModelOutputError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except InvalidTransactionError as e:
         raise HTTPException(status_code=422, detail=f"Decision engine rejected input: {e}")
@@ -116,12 +119,31 @@ def risk_evaluate(payload: RiskRequest, request: Request):
     audit_error = None
     if audit_store is not None:
         try:
-            audit_store.record_decision(request_id, decision, decision.model_explanation, source=payload.source)
+            audit_store.record_decision(
+                request_id, decision, decision.model_explanation,
+                source=payload.source, prior_txn_count=prior_txn_count
+            )
             audit_persisted = True
         except AuditPersistenceError as e:
             audit_error = str(e)
     else:
         audit_error = "Audit store unavailable."
+
+    # Build explanation header and reasons (may be None if SHAP failed)
+    explanation_header = "Explanation unavailable."
+    reasons = []
+    explanation_available = False
+
+    if explanation is not None and explanation_error is None:
+        explanation_header = explanation.get("header", "Explanation unavailable.")
+        reasons = explanation.get("reasons", [])
+        explanation_available = True
+    elif explanation_error is not None:
+        explanation_available = False
+        explanation_header = f"Explanation generation failed: {explanation_error}"
+
+    # V2: Calculate signal quality
+    signal_quality = risk_service._calculate_signal_quality(prior_txn_count)
 
     return RiskEvaluateResponse(
         request_id=request_id,
@@ -134,9 +156,12 @@ def risk_evaluate(payload: RiskRequest, request: Request):
         action=decision.action,
         policy_rule_id=decision.policy_rule_id,
         policy_reason=decision.policy_reason,
-        explanation_header=explanation["header"],
-        reasons=explanation["reasons"],
+        explanation_header=explanation_header,
+        reasons=reasons,
+        explanation_available=explanation_available,
         timestamp=decision.timestamp,
+        signal_quality=signal_quality,
+        prior_transaction_count=prior_txn_count,
         audit_persisted=audit_persisted,
         audit_error=audit_error,
     )

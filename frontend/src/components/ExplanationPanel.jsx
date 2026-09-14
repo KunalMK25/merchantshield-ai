@@ -26,7 +26,89 @@ function ContributionBar({ contribution }) {
   );
 }
 
-export default function ExplanationPanel({ explanation, isLoading }) {
+// V2: Historical transaction timeline visualization
+function TransactionHistory({ payload }) {
+  if (!payload || !payload.prior_transactions || payload.prior_transactions.length === 0) {
+    return null;
+  }
+
+  const priorTxns = payload.prior_transactions;
+  const currentTxn = payload.transaction;
+
+  // Extract amounts for visualization
+  const amounts = priorTxns.map(t => t.amount).concat([currentTxn.amount]);
+  const minAmount = Math.min(...amounts);
+  const maxAmount = Math.max(...amounts);
+  const range = maxAmount - minAmount || 1;
+
+  // Calculate average of prior transactions
+  const avgPrior = priorTxns.length > 0
+    ? priorTxns.reduce((sum, t) => sum + t.amount, 0) / priorTxns.length
+    : currentTxn.amount;
+
+  const formatCurrency = (amt) => {
+    if (amt >= 100000) return `₹${(amt / 100000).toFixed(1)}L`;
+    if (amt >= 1000) return `₹${(amt / 1000).toFixed(1)}K`;
+    return `₹${amt}`;
+  };
+
+  return (
+    <div style={{ marginBottom: 16, paddingTop: 12, borderTop: "1px solid #eee" }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#333", marginBottom: 8 }}>
+        Transaction History ({priorTxns.length} prior)
+      </div>
+
+      {/* Timeline visualization */}
+      <div style={{ display: "flex", gap: 4, alignItems: "flex-end", height: 40, marginBottom: 8 }}>
+        {priorTxns.map((t, i) => {
+          const normalized = (t.amount - minAmount) / range;
+          const height = Math.max(10, normalized * 35);
+          return (
+            <div
+              key={i}
+              style={{
+                flex: 1,
+                height: `${height}px`,
+                backgroundColor: "#c9d4e8",
+                borderRadius: 2,
+                cursor: "default",
+                title: formatCurrency(t.amount),
+              }}
+              title={formatCurrency(t.amount)}
+            />
+          );
+        })}
+        {/* Current transaction - highlighted */}
+        <div
+          style={{
+            flex: 1,
+            height: `${Math.max(10, ((currentTxn.amount - minAmount) / range) * 35)}px`,
+            backgroundColor: "#4a9d6f",
+            borderRadius: 2,
+            fontWeight: 600,
+            title: formatCurrency(currentTxn.amount),
+          }}
+          title={formatCurrency(currentTxn.amount)}
+        />
+      </div>
+
+      {/* Stats row */}
+      <div style={{ fontSize: 11, color: "#666", display: "flex", gap: 16, justifyContent: "space-between" }}>
+        <div>
+          <strong>Average:</strong> {formatCurrency(avgPrior)}
+        </div>
+        <div>
+          <strong>Current:</strong> {formatCurrency(currentTxn.amount)}
+        </div>
+        <div>
+          <strong>Ratio:</strong> {(currentTxn.amount / avgPrior).toFixed(2)}x
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ExplanationPanel({ explanation, isLoading, payload }) {
   if (isLoading) {
     return (
       <div className="panel" aria-busy="true" aria-label="Explanation loading">
@@ -69,6 +151,9 @@ export default function ExplanationPanel({ explanation, isLoading }) {
       </div>
 
       <div className="panel-body">
+        {/* V2: Transaction history timeline */}
+        <TransactionHistory payload={payload} />
+
         {/* Grounded reason list */}
         {explanation.header && (
           <p className="explanation-header">{explanation.header}</p>

@@ -453,7 +453,7 @@ def test_truly_unhandled_exception_uses_global_error_handler_shape(monkeypatch):
 
 
 def test_audit_persistence_failure_does_not_lose_the_decision(client, monkeypatch):
-    def broken_record_decision(self, request_id, decision_record, top_reasons, source="manual"):
+    def broken_record_decision(self, request_id, decision_record, top_reasons, source="manual", prior_txn_count=0):
         raise AuditPersistenceError("simulated database write failure")
 
     from backend.services.audit_service import AuditStore

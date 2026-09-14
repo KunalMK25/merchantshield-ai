@@ -57,7 +57,10 @@ class RiskEvaluateResponse(BaseModel):
     policy_reason: str
     explanation_header: str
     reasons: List[str]
+    explanation_available: bool = True  # V2: indicates if SHAP succeeded
     timestamp: str
+    signal_quality: Optional[dict] = None  # V2: historical context quality {"level", "prior_transaction_count", "message"}
+    prior_transaction_count: int = 0  # V2: count of prior transactions provided
     audit_persisted: bool
     audit_error: Optional[str] = None
 

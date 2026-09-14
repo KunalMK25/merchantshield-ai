@@ -30,6 +30,43 @@ function ScoreRing({ score, category }) {
   );
 }
 
+// V2: Signal quality badge for historical context
+function SignalQualityBadge({ signalQuality }) {
+  if (!signalQuality) return null;
+
+  const levelColors = {
+    MINIMAL: "#d4524f",
+    LIMITED: "#e8a536",
+    MODERATE: "#a8b820",
+    ESTABLISHED: "#4a9d6f",
+  };
+
+  const levelLabels = {
+    MINIMAL: "No History",
+    LIMITED: "Limited",
+    MODERATE: "Moderate",
+    ESTABLISHED: "Established",
+  };
+
+  return (
+    <div
+      style={{
+        display: "inline-block",
+        padding: "4px 8px",
+        borderRadius: 4,
+        backgroundColor: levelColors[signalQuality.level] || "#ccc",
+        color: "white",
+        fontSize: 11,
+        fontWeight: 600,
+        marginTop: 8,
+      }}
+      title={signalQuality.message}
+    >
+      {levelLabels[signalQuality.level] || signalQuality.level}
+    </div>
+  );
+}
+
 export default function RiskResultCard({ result, isLoading }) {
   if (isLoading) {
     return (
@@ -62,6 +99,7 @@ export default function RiskResultCard({ result, isLoading }) {
 
   const tier   = tierFor(result.action);
   const catMeta = RISK_CATEGORY_META[result.risk_category] || {};
+  const isLimitedContext = result.signal_quality && (result.signal_quality.level === "MINIMAL" || result.signal_quality.level === "LIMITED");
 
   return (
     <div className="panel" aria-live="polite" aria-atomic="true">
@@ -76,8 +114,37 @@ export default function RiskResultCard({ result, isLoading }) {
       </div>
 
       <div className="panel-body">
+        {/* Signal quality warning (V2) */}
+        {isLimitedContext && (
+          <div
+            style={{
+              backgroundColor: "#fff3cd",
+              border: "1px solid #ffc107",
+              borderRadius: 4,
+              padding: "8px 12px",
+              marginBottom: 12,
+              fontSize: 13,
+              color: "#856404",
+              lineHeight: 1.4,
+            }}
+            role="alert"
+          >
+            <strong>⚠️ {result.signal_quality.message}</strong>
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              Behavioral patterns cannot be reliably assessed.
+            </div>
+          </div>
+        )}
+
         {/* Score ring */}
         <ScoreRing score={result.risk_score} category={result.risk_category} />
+
+        {/* Signal quality badge (V2) */}
+        {result.signal_quality && (
+          <div style={{ textAlign: "center" }}>
+            <SignalQualityBadge signalQuality={result.signal_quality} />
+          </div>
+        )}
 
         {/* Action banner */}
         <div
@@ -97,24 +164,39 @@ export default function RiskResultCard({ result, isLoading }) {
           </div>
         </div>
 
-        {/* Metric row */}
+        {/* Metric row - V2: Clarity on risk vs action */}
         <div className="metric-row">
           <div className="metric-tile">
-            <div className="metric-tile-label">Probability</div>
+            <div className="metric-tile-label">Fraud Probability</div>
             <div className="metric-tile-value">
               {formatPercent(result.fraud_probability)}
             </div>
           </div>
           <div className="metric-tile">
-            <div className="metric-tile-label">Score</div>
-            <div className="metric-tile-value">{result.risk_score ?? "—"}</div>
-          </div>
-          <div className="metric-tile">
-            <div className="metric-tile-label">Category</div>
+            <div className="metric-tile-label">Risk Level</div>
             <div className="metric-tile-value" style={{ fontSize: 13 }}>
               {result.risk_category || "—"}
             </div>
           </div>
+          <div className="metric-tile">
+            <div className="metric-tile-label">Risk Score</div>
+            <div className="metric-tile-value">{result.risk_score ?? "—"}</div>
+          </div>
+        </div>
+
+        {/* V2: Clarify score vs action relationship */}
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            backgroundColor: "#f5f5f5",
+            padding: 8,
+            borderRadius: 4,
+            marginBottom: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          Risk level is informational. The action is determined by the merchant policy thresholds.
         </div>
 
         {/* Policy box */}
@@ -132,7 +214,7 @@ export default function RiskResultCard({ result, isLoading }) {
             <span className="mono">{result.model_version}</span>
             {"  ·  "}
             <strong>Threshold:</strong>{" "}
-            <span className="mono">{result.decision_threshold}</span>
+            <span className="mono">{result.threshold}</span>
           </div>
           {result.evaluated_at && (
             <div>

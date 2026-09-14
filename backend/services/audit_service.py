@@ -54,6 +54,7 @@ class AuditLogEntry(Base):
     decision_timestamp = Column(String(64), nullable=False)  # timestamp of the decision itself
     top_reasons_json = Column(Text, nullable=True)           # explanation, stored separately
     source = Column(String(16), nullable=False, default="manual")  # "demo" | "manual"
+    prior_transaction_count = Column(Integer, nullable=False, default=0)  # V2: historical context
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
@@ -69,10 +70,16 @@ class AuditStore:
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
 
-    def record_decision(self, request_id: str, decision_record, top_reasons: list, source: str = "manual") -> None:
+        # V2: Ensure prior_transaction_count column exists for existing databases
+        # SQLAlchemy's create_all() does not alter existing tables, only creates missing ones.
+        # For existing deployments with pre-existing audit_log table, explicitly check and add column if needed.
+        self._migrate_add_prior_transaction_count_if_needed()
+
+    def record_decision(self, request_id: str, decision_record, top_reasons: list, source: str = "manual", prior_txn_count: int = 0) -> None:
         """
         decision_record: ml.evaluation.decision_engine.DecisionRecord
         source: "demo" or "manual" -- descriptive only, see module docstring.
+        prior_txn_count: V2 -- number of prior transactions provided for context (default 0)
         Raises AuditPersistenceError on failure -- caller decides whether that
         should fail the whole request or just be surfaced as a warning.
         """
@@ -92,6 +99,7 @@ class AuditStore:
                 decision_timestamp=decision_record.timestamp,
                 top_reasons_json=json.dumps(top_reasons or []),
                 source=source if source in ("demo", "manual") else "manual",
+                prior_transaction_count=prior_txn_count,
             )
             session.add(entry)
             session.commit()
@@ -100,6 +108,52 @@ class AuditStore:
             raise AuditPersistenceError(f"Failed to persist audit record: {e}") from e
         finally:
             session.close()
+
+    def _migrate_add_prior_transaction_count_if_needed(self) -> None:
+        """
+        V2: Idempotent migration to add prior_transaction_count column to existing audit_log table.
+
+        For existing deployments where audit_log already exists, SQLAlchemy's create_all()
+        does not alter the schema. This method inspects the table and adds the column if missing.
+
+        Safe for repeated invocations (idempotent).
+        """
+        try:
+            # Only perform migration for SQLite databases (file-based or in-memory)
+            db_url = str(self.engine.url)
+            if not db_url.startswith("sqlite://"):
+                return
+
+            # Extract database path from URL
+            # sqlite:///path/to/db or sqlite:/// for in-memory
+            db_path = db_url.replace("sqlite:///", "")
+            if not db_path or db_path == "":
+                # In-memory database; skip migration
+                return
+
+            # Use raw sqlite3 for migration (more reliable than SQLAlchemy for schema changes)
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.cursor()
+                # Query SQLite schema to check if column exists
+                cursor.execute("PRAGMA table_info(audit_log)")
+                columns = {row[1] for row in cursor.fetchall()}
+
+                if "prior_transaction_count" not in columns:
+                    # Column does not exist; add it with default value
+                    cursor.execute(
+                        "ALTER TABLE audit_log ADD COLUMN prior_transaction_count INTEGER DEFAULT 0"
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            # Migration failed; silently continue
+            # Reasons: column already exists, database format differs, file locked, etc.
+            # If the column is truly missing and required, the application will fail later
+            # with a clearer error when trying to write a record
+            pass
 
     def get_recent(self, limit: int = 50) -> list:
         session = self.Session()
@@ -117,6 +171,7 @@ class AuditStore:
                     decision_timestamp=r.decision_timestamp,
                     top_reasons=json.loads(r.top_reasons_json) if r.top_reasons_json else [],
                     source=r.source or "manual",
+                    prior_transaction_count=r.prior_transaction_count,  # V2
                     created_at=r.created_at.isoformat(),
                 )
                 for r in rows

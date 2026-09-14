@@ -18,6 +18,7 @@ export default function App() {
 
   const [result, setResult] = useState(null);
   const [explanation, setExplanation] = useState(null);
+  const [currentPayload, setCurrentPayload] = useState(null);  // V2: track payload for history visualization
   const [evaluateLoading, setEvaluateLoading] = useState(false);
   const [evaluateError, setEvaluateError] = useState(null);
 
@@ -74,6 +75,7 @@ export default function App() {
     setEvaluateError(null);
     setResult(null);
     setExplanation(null);
+    setCurrentPayload(payload);  // V2: store for history visualization
     try {
       // /risk/evaluate: the authoritative decision (runs the decision engine + audit write)
       // /risk/explain: same underlying model/SHAP computation, used to obtain raw
@@ -113,7 +115,7 @@ export default function App() {
           <div className="app-title">MerchantShield AI</div>
           <div className="app-tagline">Fraud risk decision support</div>
           <div className="app-event-badge" aria-label="Razorpay AI Buildathon 2026, Track 02">
-            Razorpay AI Buildathon 2026 · Track 02
+            Razorpay AI Buildathon 2026 · Track 02 · DEMO MODE
           </div>
         </div>
 
@@ -160,6 +162,10 @@ export default function App() {
         {/* ── Context bar ──────────────────────────────────────────── */}
         <p className="context-bar">
           Evaluate transaction risk, understand why the model flagged it, and record the decision.
+          <br />
+          <em style={{ fontSize: "0.9em", opacity: 0.7 }}>
+            ⓘ Prototype using synthetic data. Not connected to live Razorpay transaction systems.
+          </em>
         </p>
 
         {/* ── Evaluation grid ──────────────────────────────────────── */}
@@ -174,7 +180,7 @@ export default function App() {
               />
             )}
             <RiskResultCard result={result} isLoading={evaluateLoading} />
-            <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} />
+            <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} payload={currentPayload} />
           </div>
         </div>
 

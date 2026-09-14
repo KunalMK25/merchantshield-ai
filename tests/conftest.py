@@ -78,13 +78,50 @@ def explainer(model):
     return RiskExplainer(model)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def ensure_raw_transactions():
+    """
+    Ensures ml/data/raw_transactions.csv exists for tests that depend on it.
+    Generated deterministically from the project's synthetic pipeline if missing.
+    Session-scoped and autouse=True so it runs exactly once at session start,
+    before any tests that might need it.
+    """
+    import os
+
+    raw_path = os.path.join(_PROJECT_ROOT, "ml", "data", "raw_transactions.csv")
+
+    if not os.path.exists(raw_path):
+        from ml.data.generate_synthetic import generate
+
+        # Generate raw transactions deterministically
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+        generate(output_path=raw_path)
+
+
 @pytest.fixture(scope="session")
 def sample_rows():
     """
     20 randomly-sampled feature rows from the full features CSV, used by
     explainability tests. Fixed random_state=11 matches the original fixture
     in test_explainability.py for identical sampling behaviour.
+
+    If features.csv does not exist, generates it deterministically from the
+    project's synthetic data pipeline to ensure reproducible testing
+    without committing 450+ MB of generated data.
     """
+    import os
+
+    if not os.path.exists(_FEATURES_PATH):
+        # Regenerate features.csv using the project's deterministic pipeline
+        from ml.features.build_features import build_features
+
+        # Ensure raw_transactions.csv exists first (ensure_raw_transactions fixture handles this)
+        # Then build features from it
+        raw = pd.read_csv(os.path.join(_PROJECT_ROOT, "ml", "data", "raw_transactions.csv"))
+        df = build_features(raw)
+        os.makedirs(os.path.dirname(_FEATURES_PATH), exist_ok=True)
+        df.to_csv(_FEATURES_PATH, index=False)
+
     df = pd.read_csv(_FEATURES_PATH)
     return df.sample(20, random_state=11).reset_index(drop=True)
 
