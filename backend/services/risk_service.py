@@ -231,6 +231,23 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
     explanation = build_explanation_text(
         result, decision_threshold=DECISION_THRESHOLD, is_cold_start=is_cold_start
     )
+
+    # For cold-start, filter contributions to exclude history-dependent features
+    # (these use sentinel/default values and should not be shown to frontend)
+    contributions = result["contributions"]
+    if is_cold_start:
+        cold_start_exclude = {
+            "amount_vs_avg_ratio",
+            "amount_zscore",
+            "time_since_prev_txn_min",
+            "prior_txn_count",
+            "velocity_5min",
+            "velocity_30min",
+            "velocity_60min",
+            "failed_ratio_trailing10",
+        }
+        contributions = [c for c in contributions if c["feature"] not in cold_start_exclude]
+
     return dict(
         transaction_id=request.transaction.transaction_id,
         model_version=bundle.metadata.get("model_name", "lgbm_v1"),
@@ -238,7 +255,7 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
         additivity_check_passed=result["additivity_check_passed"],
         header=explanation["header"],
         reasons=explanation["reasons"],
-        contributions=result["contributions"],
+        contributions=contributions,
         cold_start_context=explanation.get("cold_start_context"),
     )
 
