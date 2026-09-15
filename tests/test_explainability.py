@@ -419,6 +419,9 @@ def test_cold_start_reasons_exclude_all_history_features():
     """
     Regression test: For cold-start, verify that ALL history-dependent features
     are completely removed from reasons (not just text-transformed).
+    Includes the 10 features: amount_vs_avg_ratio, amount_zscore, time_since_prev_txn_min,
+    prior_txn_count, velocity_5min, velocity_30min, velocity_60min, failed_ratio_trailing10,
+    new_device_flag, new_geo_flag.
     """
     # Mock a result with history features in contributions
     result = {
@@ -440,6 +443,10 @@ def test_cold_start_reasons_exclude_all_history_features():
              "direction": "decreases_risk", "magnitude": 0.02},
             {"feature": "failed_ratio_trailing10", "value": 0.0, "shap_value": -0.01,
              "direction": "decreases_risk", "magnitude": 0.01},
+            {"feature": "new_device_flag", "value": 0, "shap_value": -0.08,
+             "direction": "decreases_risk", "magnitude": 0.08},
+            {"feature": "new_geo_flag", "value": 0, "shap_value": -0.06,
+             "direction": "decreases_risk", "magnitude": 0.06},
             {"feature": "amount", "value": 50000, "shap_value": 0.20,
              "direction": "increases_risk", "magnitude": 0.20},
             {"feature": "account_age_days", "value": 1, "shap_value": 0.10,
@@ -459,6 +466,11 @@ def test_cold_start_reasons_exclude_all_history_features():
         "standard deviation",
         "usual spending pattern",
         "transactions occurred",
+        "device has been used previously",
+        "device has not been seen previously",
+        "geographic location",
+        "location matches",
+        "location is new",
     ]
     
     for phrase in forbidden_phrases:
@@ -471,7 +483,7 @@ def test_cold_start_reasons_exclude_all_history_features():
 def test_cold_start_contributions_filtered_at_api_level():
     """
     Test that the filtering logic at the API level (in explain_only) 
-    correctly removes history-dependent features from contributions
+    correctly removes all 10 history-dependent features from contributions
     when prior_transaction_count == 0 (cold-start).
     """
     # This tests the filtering logic directly, not through a full API call
@@ -485,6 +497,10 @@ def test_cold_start_contributions_filtered_at_api_level():
              "direction": "increases_risk", "magnitude": 0.15},
             {"feature": "amount_vs_avg_ratio", "value": 1.0, "shap_value": 0.05,
              "direction": "increases_risk", "magnitude": 0.05},
+            {"feature": "new_device_flag", "value": 0, "shap_value": -0.08,
+             "direction": "decreases_risk", "magnitude": 0.08},
+            {"feature": "new_geo_flag", "value": 0, "shap_value": -0.06,
+             "direction": "decreases_risk", "magnitude": 0.06},
             {"feature": "account_age_days", "value": 1, "shap_value": 0.05,
              "direction": "increases_risk", "magnitude": 0.05},
         ],
@@ -500,6 +516,8 @@ def test_cold_start_contributions_filtered_at_api_level():
         "velocity_30min",
         "velocity_60min",
         "failed_ratio_trailing10",
+        "new_device_flag",
+        "new_geo_flag",
     }
     
     # Simulate what explain_only() does when is_cold_start=True
@@ -511,6 +529,8 @@ def test_cold_start_contributions_filtered_at_api_level():
     filtered_features = {c["feature"] for c in contributions}
     assert "prior_txn_count" not in filtered_features
     assert "amount_vs_avg_ratio" not in filtered_features
+    assert "new_device_flag" not in filtered_features
+    assert "new_geo_flag" not in filtered_features
     
     # Verify non-history features remain
     assert "amount" in filtered_features
@@ -531,6 +551,10 @@ def test_cold_start_vs_established_history_difference():
              "direction": "increases_risk", "magnitude": 0.15},
             {"feature": "amount_vs_avg_ratio", "value": 1.0, "shap_value": 0.05,
              "direction": "increases_risk", "magnitude": 0.05},
+            {"feature": "new_device_flag", "value": 0, "shap_value": -0.08,
+             "direction": "decreases_risk", "magnitude": 0.08},
+            {"feature": "new_geo_flag", "value": 0, "shap_value": -0.06,
+             "direction": "decreases_risk", "magnitude": 0.06},
         ],
     }
     
@@ -552,6 +576,96 @@ def test_cold_start_vs_established_history_difference():
     
     # Established should NOT have context message
     assert est_expl["cold_start_context"] is None
+
+
+def test_new_device_flag_excluded_for_cold_start():
+    """
+    Regression test: new_device_flag must be excluded from cold-start explanations.
+    """
+    result = {
+        "fraud_probability": 0.40,
+        "contributions": [
+            {"feature": "new_device_flag", "value": 0, "shap_value": -0.08,
+             "direction": "decreases_risk", "magnitude": 0.08},
+            {"feature": "amount", "value": 1000, "shap_value": 0.15,
+             "direction": "increases_risk", "magnitude": 0.15},
+        ],
+    }
+    
+    explanation = build_explanation_text(result, decision_threshold=0.40, is_cold_start=True)
+    reasons_text = " ".join(explanation["reasons"]).lower()
+    
+    # new_device_flag phrases should NOT appear
+    assert "device has been used previously" not in reasons_text
+    assert "device has not been seen previously" not in reasons_text
+    assert "previously" not in reasons_text or "transaction" not in reasons_text
+
+
+def test_new_geo_flag_excluded_for_cold_start():
+    """
+    Regression test: new_geo_flag must be excluded from cold-start explanations.
+    """
+    result = {
+        "fraud_probability": 0.40,
+        "contributions": [
+            {"feature": "new_geo_flag", "value": 0, "shap_value": -0.06,
+             "direction": "decreases_risk", "magnitude": 0.06},
+            {"feature": "amount", "value": 1000, "shap_value": 0.15,
+             "direction": "increases_risk", "magnitude": 0.15},
+        ],
+    }
+    
+    explanation = build_explanation_text(result, decision_threshold=0.40, is_cold_start=True)
+    reasons_text = " ".join(explanation["reasons"]).lower()
+    
+    # new_geo_flag phrases should NOT appear
+    assert "geographic location" not in reasons_text
+    assert "location matches" not in reasons_text
+    assert "location is new" not in reasons_text
+
+
+def test_new_device_flag_included_for_established_history():
+    """
+    Verify that new_device_flag IS included in explanations for established history.
+    """
+    result = {
+        "fraud_probability": 0.40,
+        "contributions": [
+            {"feature": "new_device_flag", "value": 1, "shap_value": 0.15,
+             "direction": "increases_risk", "magnitude": 0.15},
+            {"feature": "amount", "value": 1000, "shap_value": 0.10,
+             "direction": "increases_risk", "magnitude": 0.10},
+        ],
+    }
+    
+    explanation = build_explanation_text(result, decision_threshold=0.40, is_cold_start=False)
+    reasons_text = " ".join(explanation["reasons"]).lower()
+    
+    # With established history, device flag should appear
+    assert len(explanation["reasons"]) >= 1
+    assert "device" in reasons_text
+
+
+def test_new_geo_flag_included_for_established_history():
+    """
+    Verify that new_geo_flag IS included in explanations for established history.
+    """
+    result = {
+        "fraud_probability": 0.40,
+        "contributions": [
+            {"feature": "new_geo_flag", "value": 1, "shap_value": 0.15,
+             "direction": "increases_risk", "magnitude": 0.15},
+            {"feature": "amount", "value": 1000, "shap_value": 0.10,
+             "direction": "increases_risk", "magnitude": 0.10},
+        ],
+    }
+    
+    explanation = build_explanation_text(result, decision_threshold=0.40, is_cold_start=False)
+    reasons_text = " ".join(explanation["reasons"]).lower()
+    
+    # With established history, geo flag should appear
+    assert len(explanation["reasons"]) >= 1
+    assert ("geographic" in reasons_text or "location" in reasons_text)
 
 
 if __name__ == "__main__":

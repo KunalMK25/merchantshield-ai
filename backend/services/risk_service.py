@@ -245,6 +245,8 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
             "velocity_30min",
             "velocity_60min",
             "failed_ratio_trailing10",
+            "new_device_flag",
+            "new_geo_flag",
         }
         contributions = [c for c in contributions if c["feature"] not in cold_start_exclude]
 

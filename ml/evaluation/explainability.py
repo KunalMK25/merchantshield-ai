@@ -215,6 +215,8 @@ def build_explanation_text(result: dict, decision_threshold: float, top_k: int =
         "velocity_30min",            # requires prior transactions in time window
         "velocity_60min",            # requires prior transactions in time window
         "failed_ratio_trailing10",   # requires prior transactions to calculate ratio
+        "new_device_flag",           # compares against prior devices (0 for first txn)
+        "new_geo_flag",              # compares against prior geos (0 for first txn)
     }
 
     flagged = result["fraud_probability"] >= decision_threshold
