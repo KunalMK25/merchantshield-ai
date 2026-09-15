@@ -285,16 +285,16 @@ def test_established_history_explanations_work_normally(explainer, sample_rows):
     assert "historical average" in text
 
 
-def test_humanize_contribution_with_cold_start_flag():
+def test_humanize_contribution_generates_valid_explanations():
     """
-    Test that history-dependent features with sentinel values are filtered
-    BEFORE humanization in cold-start scenarios (not suppressed during humanization).
-    The filtering happens in build_explanation_text(), not in humanize_contribution().
+    Test that humanize_contribution() correctly generates human-readable
+    explanations for SHAP contributions. This verifies the humanization layer
+    independently. Cold-start filtering of history features happens upstream
+    in build_explanation_text(), not in humanize_contribution() itself.
     """
-    # These features would appear in contributions but get filtered in build_explanation_text
-    # when is_cold_start=True. humanize_contribution() itself doesn't check cold_start.
-    # Test that when called directly (outside cold-start filtering), they produce normal output.
-    suppress_features = [
+    # These features would be filtered in cold-start scenarios by build_explanation_text,
+    # but when humanized directly by humanize_contribution(), they produce normal output
+    test_contributions = [
         {"feature": "amount_vs_avg_ratio", "value": 1.0, "shap_value": 0.05,
          "direction": "increases_risk", "magnitude": 0.05},
         {"feature": "amount_zscore", "value": 0.0, "shap_value": -0.02,
@@ -303,14 +303,13 @@ def test_humanize_contribution_with_cold_start_flag():
          "direction": "increases_risk", "magnitude": 0.01},
     ]
 
-    for contrib in suppress_features:
-        # humanize_contribution() no longer has is_cold_start parameter
-        # It generates normal output for all features (filtering happens upstream in build_explanation_text)
+    for contrib in test_contributions:
         text = humanize_contribution(contrib)
-        # These features should produce normal explanations when not filtered upstream
-        assert len(text) > 0
-        # The sentinel values should be in the text when humanized directly
-        assert "increases risk" in text or "decreases risk" in text
+        # Each contribution should produce a valid explanation string
+        assert len(text) > 0, f"Empty explanation for {contrib['feature']}"
+        # Templates use past tense: "increased risk" or "decreased risk"
+        assert "increased risk" in text or "decreased risk" in text, \
+            f"Missing risk direction in: {text}"
 
 
 def test_humanize_contribution_non_suppressed_features_with_cold_start():
