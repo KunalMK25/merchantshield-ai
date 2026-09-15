@@ -42,6 +42,7 @@ class RiskExplainResponse(BaseModel):
     header: str
     reasons: List[str]
     contributions: List[ContributionItem]
+    cold_start_context: Optional[str] = None  # V2: contextual signal for 0 prior txns (NOT a SHAP contribution)
 
 
 class RiskEvaluateResponse(BaseModel):
@@ -58,6 +59,7 @@ class RiskEvaluateResponse(BaseModel):
     explanation_header: str
     reasons: List[str]
     explanation_available: bool = True  # V2: indicates if SHAP succeeded
+    cold_start_context: Optional[str] = None  # V2: contextual signal for 0 prior txns (NOT a SHAP contribution)
     timestamp: str
     signal_quality: Optional[dict] = None  # V2: historical context quality {"level", "prior_transaction_count", "message"}
     prior_transaction_count: int = 0  # V2: count of prior transactions provided

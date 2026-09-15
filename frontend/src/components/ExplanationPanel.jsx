@@ -154,6 +154,34 @@ export default function ExplanationPanel({ explanation, isLoading, payload }) {
         {/* V2: Transaction history timeline */}
         <TransactionHistory payload={payload} />
 
+        {/* V2: Cold-start contextual signal (NOT a SHAP contribution) */}
+        {explanation.cold_start_context && (
+          <div
+            style={{
+              backgroundColor: "#f0f4f8",
+              border: "1px solid #b3c5d9",
+              borderLeft: "4px solid #b3c5d9",
+              borderRadius: 4,
+              padding: "8px 12px",
+              marginBottom: 12,
+              fontSize: 12,
+              color: "#334455",
+              lineHeight: 1.5,
+              fontStyle: "italic",
+            }}
+            role="region"
+            aria-label="Cold-start context"
+          >
+            <strong>⚠️ Historical Context Not Available:</strong>
+            <div style={{ marginTop: 4, fontSize: 11 }}>
+              {explanation.cold_start_context}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "#556677", fontStyle: "normal" }}>
+              <em>Note: This is a contextual risk factor, not a model contribution (SHAP).</em>
+            </div>
+          </div>
+        )}
+
         {/* Grounded reason list */}
         {explanation.header && (
           <p className="explanation-header">{explanation.header}</p>

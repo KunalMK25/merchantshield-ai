@@ -179,7 +179,7 @@ def narrative_header(fraud_probability: float, decision_threshold: float) -> str
     return "Top contributing factors (transaction was NOT flagged):"
 
 
-def build_explanation_text(result: dict, decision_threshold: float, top_k: int = 5) -> dict:
+def build_explanation_text(result: dict, decision_threshold: float, top_k: int = 5, is_cold_start: bool = False) -> dict:
     """
     Produces the final human-readable explanation, choosing reason set and framing
     based on the ACTUAL decision outcome (grounded in fraud_probability vs the real
@@ -188,6 +188,19 @@ def build_explanation_text(result: dict, decision_threshold: float, top_k: int =
         (matches "why was this flagged" framing).
       - Non-flagged transactions: reasons = top contributions by magnitude in either
         direction (there's no "why flagged" story to tell, so we show what mattered).
+
+    Parameters:
+    -----------
+    result : dict
+        SHAP explainer result with fraud_probability and contributions
+    decision_threshold : float
+        The frozen threshold for flagging (typically 0.40)
+    top_k : int
+        Number of top contributions to include in reasons
+    is_cold_start : bool
+        True if prior_txn_count == 0. When True, history-dependent explanations
+        are suppressed and a cold-start context message is generated to indicate
+        that historical behavioral evidence is unavailable.
     """
     flagged = result["fraud_probability"] >= decision_threshold
     header = narrative_header(result["fraud_probability"], decision_threshold)
@@ -196,14 +209,54 @@ def build_explanation_text(result: dict, decision_threshold: float, top_k: int =
     else:
         pool = result["contributions"]
     top = pool[:top_k]
-    reasons = [humanize_contribution(c) for c in top]
-    return dict(flagged=flagged, header=header, reasons=reasons)
+    reasons = [humanize_contribution(c, is_cold_start=is_cold_start) for c in top]
+
+    # Generate cold-start context message (NOT a SHAP contribution)
+    cold_start_context = None
+    if is_cold_start:
+        cold_start_context = (
+            "No historical transactions available. Behavioral history cannot be assessed. "
+            "Risk assessment is based only on the evidence available in this transaction. "
+            "Note: No transaction history available — increases risk context because "
+            "behavioral evidence cannot establish the customer's normal pattern."
+        )
+
+    return dict(flagged=flagged, header=header, reasons=reasons, cold_start_context=cold_start_context)
 
 
-def humanize_contribution(contribution: dict) -> str:
+def humanize_contribution(contribution: dict, is_cold_start: bool = False) -> str:
+    """
+    Generate human-readable explanation for a SHAP contribution.
+
+    Parameters:
+    -----------
+    contribution : dict
+        SHAP contribution with feature, value, shap_value, direction, magnitude
+    is_cold_start : bool
+        True if prior_txn_count == 0 (no prior transaction history).
+        When True, suppress or replace history-dependent explanations to avoid
+        presenting sentinel/default values as real historical behavior.
+
+    Returns:
+    --------
+    str : Human-readable explanation of this feature's contribution to fraud risk.
+    """
     feat = contribution["feature"]
     val = contribution["value"]
     shap_val = contribution["shap_value"]
+
+    # Features that are meaningless/misleading when prior_txn_count == 0
+    # These use default/sentinel values in cold-start scenarios and should not
+    # be presented as real historical behavior.
+    cold_start_suppress = {
+        "amount_vs_avg_ratio",      # sentinel = 1.0 (no history to average)
+        "amount_zscore",             # sentinel = 0.0 (no history to compare against)
+        "time_since_prev_txn_min",   # sentinel = 99999 (no prior transaction)
+    }
+
+    if is_cold_start and feat in cold_start_suppress:
+        return "No prior transaction history available — behavioral signal unavailable."
+
     template = _TEMPLATES.get(feat)
     if template is None:
         # Grounded fallback for any feature without a bespoke template -- still

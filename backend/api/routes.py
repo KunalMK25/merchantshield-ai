@@ -132,11 +132,13 @@ def risk_evaluate(payload: RiskRequest, request: Request):
     # Build explanation header and reasons (may be None if SHAP failed)
     explanation_header = "Explanation unavailable."
     reasons = []
+    cold_start_context = None
     explanation_available = False
 
     if explanation is not None and explanation_error is None:
         explanation_header = explanation.get("header", "Explanation unavailable.")
         reasons = explanation.get("reasons", [])
+        cold_start_context = explanation.get("cold_start_context")
         explanation_available = True
     elif explanation_error is not None:
         explanation_available = False
@@ -159,6 +161,7 @@ def risk_evaluate(payload: RiskRequest, request: Request):
         explanation_header=explanation_header,
         reasons=reasons,
         explanation_available=explanation_available,
+        cold_start_context=cold_start_context,
         timestamp=decision.timestamp,
         signal_quality=signal_quality,
         prior_transaction_count=prior_txn_count,

@@ -225,7 +225,12 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
     probability = _validate_model_probability(result["fraud_probability"])
     result["fraud_probability"] = probability
 
-    explanation = build_explanation_text(result, decision_threshold=DECISION_THRESHOLD)
+    # Detect cold-start (no prior transaction history)
+    is_cold_start = len(request.prior_transactions) == 0
+
+    explanation = build_explanation_text(
+        result, decision_threshold=DECISION_THRESHOLD, is_cold_start=is_cold_start
+    )
     return dict(
         transaction_id=request.transaction.transaction_id,
         model_version=bundle.metadata.get("model_name", "lgbm_v1"),
@@ -234,6 +239,7 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
         header=explanation["header"],
         reasons=explanation["reasons"],
         contributions=result["contributions"],
+        cold_start_context=explanation.get("cold_start_context"),
     )
 
 
@@ -273,7 +279,13 @@ def evaluate_full(bundle: ModelBundle, request: RiskRequest):
         result = bundle.explainer.explain(row)
         # Re-validate probability from SHAP result
         probability_from_shap = _validate_model_probability(result["fraud_probability"])
-        explanation = build_explanation_text(result, decision_threshold=DECISION_THRESHOLD)
+
+        # Detect cold-start (no prior transaction history)
+        is_cold_start = prior_txn_count == 0
+
+        explanation = build_explanation_text(
+            result, decision_threshold=DECISION_THRESHOLD, is_cold_start=is_cold_start
+        )
         explanation["reasons"] = explanation.get("reasons", [])
 
         # Update decision with explanations
