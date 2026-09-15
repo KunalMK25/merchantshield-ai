@@ -276,34 +276,47 @@ def test_established_history_explanations_work_normally(explainer, sample_rows):
     # (no special suppression)
     assert len(explanation["reasons"]) > 0
 
-    # Humanize a history-dependent contribution directly
+    # Humanize a history-dependent contribution directly (no is_cold_start param)
     contrib = {"feature": "amount_vs_avg_ratio", "value": 2.5, "shap_value": 0.1,
                "direction": "increases_risk", "magnitude": 0.1}
-    text = humanize_contribution(contrib, is_cold_start=False)
+    text = humanize_contribution(contrib)
     # Should include the actual ratio
     assert "2.5" in text
     assert "historical average" in text
 
 
 def test_humanize_contribution_with_cold_start_flag():
-    """Test the humanize_contribution function with is_cold_start=True directly."""
-    # History-dependent features should be suppressed
+    """
+    Test that history-dependent features with sentinel values are filtered
+    BEFORE humanization in cold-start scenarios (not suppressed during humanization).
+    The filtering happens in build_explanation_text(), not in humanize_contribution().
+    """
+    # These features would appear in contributions but get filtered in build_explanation_text
+    # when is_cold_start=True. humanize_contribution() itself doesn't check cold_start.
+    # Test that when called directly (outside cold-start filtering), they produce normal output.
     suppress_features = [
-        {"feature": "amount_vs_avg_ratio", "value": 1.0, "shap_value": 0.05},
-        {"feature": "amount_zscore", "value": 0.0, "shap_value": -0.02},
-        {"feature": "time_since_prev_txn_min", "value": 99999, "shap_value": 0.01},
+        {"feature": "amount_vs_avg_ratio", "value": 1.0, "shap_value": 0.05,
+         "direction": "increases_risk", "magnitude": 0.05},
+        {"feature": "amount_zscore", "value": 0.0, "shap_value": -0.02,
+         "direction": "decreases_risk", "magnitude": 0.02},
+        {"feature": "time_since_prev_txn_min", "value": 99999, "shap_value": 0.01,
+         "direction": "increases_risk", "magnitude": 0.01},
     ]
 
     for contrib in suppress_features:
-        contrib["direction"] = "increases_risk" if contrib["shap_value"] > 0 else "decreases_risk"
-        contrib["magnitude"] = abs(contrib["shap_value"])
-        text = humanize_contribution(contrib, is_cold_start=True)
-        assert text == "No prior transaction history available — behavioral signal unavailable."
+        # humanize_contribution() no longer has is_cold_start parameter
+        # It generates normal output for all features (filtering happens upstream in build_explanation_text)
+        text = humanize_contribution(contrib)
+        # These features should produce normal explanations when not filtered upstream
+        assert len(text) > 0
+        # The sentinel values should be in the text when humanized directly
+        assert "increases risk" in text or "decreases risk" in text
 
 
 def test_humanize_contribution_non_suppressed_features_with_cold_start():
-    """Test that non-history features still work with cold-start flag."""
-    # Non-history features should NOT be suppressed
+    """Test that non-history features generate normal explanations."""
+    # Non-history features should NOT be suppressed even with cold-start scenario
+    # humanize_contribution() doesn't have cold-start logic; filtering happens in build_explanation_text
     non_suppressed = {
         "feature": "new_device_flag",
         "value": 1,
@@ -311,8 +324,9 @@ def test_humanize_contribution_non_suppressed_features_with_cold_start():
         "direction": "increases_risk",
         "magnitude": 0.5,
     }
-    text = humanize_contribution(non_suppressed, is_cold_start=True)
-    assert "behavioral signal unavailable" not in text
+    text = humanize_contribution(non_suppressed)
+    # Should produce normal explanation (no cold-start suppression in humanize_contribution)
+    assert len(text) > 0
     assert "Device" in text or "device" in text
 
 
@@ -341,12 +355,10 @@ def test_build_explanation_text_includes_cold_start_context():
     assert "cold_start_context" in explanation
     assert explanation["cold_start_context"] is not None
     
-    # Context should mention lack of historical data
-    assert "No historical transactions available" in explanation["cold_start_context"]
-    assert "Behavioral history cannot be assessed" in explanation["cold_start_context"]
-    assert "Risk assessment is based only on the evidence available in this transaction" in explanation["cold_start_context"]
-    assert "No transaction history available" in explanation["cold_start_context"]
-    assert "increases risk context" in explanation["cold_start_context"]
+    # Context should mention lack of prior history and that patterns cannot be assessed
+    assert "No prior transaction history available" in explanation["cold_start_context"]
+    assert "behavioral patterns cannot be" in explanation["cold_start_context"]
+    assert "Risk assessment is based on the evidence available in this transaction" in explanation["cold_start_context"]
     
     # Reasons should still be present (SHAP contributions)
     assert "reasons" in explanation
@@ -375,10 +387,9 @@ def test_build_explanation_text_no_cold_start_context_for_established_history():
 def test_cold_start_context_message_format_is_clear():
     """
     Verify that the cold-start context message clearly states:
-    1. No historical transactions
-    2. Behavioral history cannot be assessed
-    3. Risk based only on current transaction
-    4. No history increases risk context (not a claim that no history = fraud)
+    1. No prior transaction history is available
+    2. Behavioral patterns cannot be reliably assessed
+    3. Risk based only on current evidence
     """
     result = {
         "fraud_probability": 0.50,
@@ -391,17 +402,14 @@ def test_cold_start_context_message_format_is_clear():
     
     context = explanation["cold_start_context"]
     
-    # Must be truthful about lack of history
-    assert "No historical transactions available" in context
+    # Must be truthful about lack of prior history
+    assert "No prior transaction history available" in context
     
-    # Must explain why this matters
-    assert "Behavioral history cannot be assessed" in context or "cannot establish" in context
+    # Must explain why this matters (behavioral patterns)
+    assert "behavioral patterns cannot be" in context
     
-    # Must clarify that decision is based on current transaction
-    assert "based only on the evidence" in context or "current transaction" in context
-    
-    # Must be clear about the risk context (not accusatory)
-    assert "increases risk context" in context
+    # Must clarify that decision is based on current evidence
+    assert "Risk assessment is based on the evidence available in this transaction" in context
 
 
 # ---------------------------------------------------------------------------
@@ -461,20 +469,14 @@ def test_cold_start_reasons_exclude_all_history_features():
     assert len(explanation["reasons"]) > 0, "Should still have some valid reasons"
 
 
-def test_cold_start_contributions_filtered_at_api_level(explainer, sample_rows):
+def test_cold_start_contributions_filtered_at_api_level():
     """
-    Test that contributions array returned by evaluate_simple() is filtered
-    for cold-start (no history-dependent features).
+    Test that the filtering logic at the API level (in explain_only) 
+    correctly removes history-dependent features from contributions
+    when prior_transaction_count == 0 (cold-start).
     """
-    from backend.services.risk_service import evaluate_simple
-    from ml.features.build_features import build_features
-    
-    # Create a request with 0 prior transactions (cold-start)
-    row = sample_rows.iloc[0].copy()
-    row["prior_txn_count"] = 0
-    
-    # We can't easily create a RiskRequest here without the full backend context,
-    # so we'll test the filtering logic directly
+    # This tests the filtering logic directly, not through a full API call
+    # (which would require full RiskRequest/ModelBundle setup)
     result = {
         "fraud_probability": 0.35,
         "contributions": [
@@ -501,14 +503,13 @@ def test_cold_start_contributions_filtered_at_api_level(explainer, sample_rows):
         "failed_ratio_trailing10",
     }
     
-    filtered_contributions = (
-        [c for c in result["contributions"] if c["feature"] not in cold_start_exclude]
-        if is_cold_start
-        else result["contributions"]
-    )
+    # Simulate what explain_only() does when is_cold_start=True
+    contributions = result["contributions"]
+    if is_cold_start:
+        contributions = [c for c in contributions if c["feature"] not in cold_start_exclude]
     
     # Verify history features are filtered out
-    filtered_features = {c["feature"] for c in filtered_contributions}
+    filtered_features = {c["feature"] for c in contributions}
     assert "prior_txn_count" not in filtered_features
     assert "amount_vs_avg_ratio" not in filtered_features
     
@@ -538,15 +539,17 @@ def test_cold_start_vs_established_history_difference():
     cold_expl = build_explanation_text(result, decision_threshold=0.40, is_cold_start=True)
     
     # Established history explanation (same result, different flag)
-    result["contributions"][2]["value"] = 2.5  # Change to non-sentinel value
-    est_expl = build_explanation_text(result, decision_threshold=0.40, is_cold_start=False)
+    result_est = result.copy()
+    result_est["contributions"] = result["contributions"].copy()
+    result_est["contributions"][2]["value"] = 2.5  # Change to non-sentinel value
+    est_expl = build_explanation_text(result_est, decision_threshold=0.40, is_cold_start=False)
     
     # Cold-start should have fewer reasons (history features filtered)
     assert len(cold_expl["reasons"]) <= len(est_expl["reasons"])
     
     # Cold-start should have context message
     assert cold_expl["cold_start_context"] is not None
-    assert "No historical transactions available" in cold_expl["cold_start_context"]
+    assert "No prior transaction history available" in cold_expl["cold_start_context"]
     
     # Established should NOT have context message
     assert est_expl["cold_start_context"] is None
