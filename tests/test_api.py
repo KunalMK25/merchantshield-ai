@@ -68,8 +68,12 @@ def test_api_root_endpoint(client):
 
 
 def test_root_serves_frontend_when_built(client):
-    # frontend/dist exists in this environment (built during Phase 9) -- "/"
-    # should serve the built index.html, not the JSON service-identification body.
+    # When frontend/dist exists, "/" serves the built index.html rather than the JSON
+    # service-identification body. A fresh checkout has no build, so skip instead of failing.
+    import os
+    dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist", "index.html")
+    if not os.path.exists(dist):
+        pytest.skip("frontend not built (run `npm run build` in frontend/)")
     r = client.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers.get("content-type", "")

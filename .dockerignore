@@ -12,8 +12,12 @@ __pycache__/
 # Generated datasets (regenerated during image build via generate_synthetic.py)
 ml/data/*.csv
 
-# SQLite audit database (runtime state, not part of the image)
+# SQLite audit database and other runtime state (not part of the image)
 backend/data/*.db
+ml/data_store/
+ml/registry_store/
+.venv/
+scripts/
 
 # Frontend build output in the source tree (Stage 1 produces its own)
 # and Node dependencies (installed fresh in Stage 1)

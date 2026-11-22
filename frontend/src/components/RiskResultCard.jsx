@@ -59,6 +59,7 @@ function SignalQualityBadge({ signalQuality }) {
         fontSize: 11,
         fontWeight: 600,
         marginTop: 8,
+        marginBottom: 12,
       }}
       title={signalQuality.message}
     >

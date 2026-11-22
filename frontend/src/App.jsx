@@ -15,9 +15,28 @@ import AlertsPage from "./components/AlertsPage";
 import { useTheme } from "./hooks/useTheme";
 import "./styles/App.css";
 
+const VIEWS = ["evaluate", "monitor", "registry", "retrain", "drift", "alerts"];
+
+// Each page has its own URL (#/alerts), so refresh, back and shared links land on the same page.
+function viewFromHash() {
+  const id = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  return VIEWS.includes(id) ? id : "evaluate";
+}
+
 export default function App() {
   const { theme, toggle } = useTheme();
-  const [view, setView] = useState("evaluate");
+  const [view, setView] = useState(viewFromHash);
+
+  useEffect(() => {
+    const onHash = () => setView(viewFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const navigate = useCallback((id) => {
+    if (window.location.hash !== `#/${id}`) window.location.hash = `/${id}`;
+    setView(id);
+  }, []);
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState(null);
 
@@ -131,6 +150,8 @@ export default function App() {
 
   const isOk = health?.status === "ok" && health?.model_loaded;
   const modelVersion = health?.model_version || modelInfo?.model_version || "—";
+  // Registry champions are labelled "algorithm@run_id"; show the algorithm big and the run small.
+  const [modelName, modelRun] = String(modelVersion).split("@");
   const threshold = modelInfo?.decision_threshold ?? "—";
   const m = modelInfo?.test_metrics_at_frozen_threshold;
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—");
@@ -143,12 +164,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} alertCount={alertCount} />
+      <Sidebar view={view} onNavigate={navigate} theme={theme} onToggleTheme={toggle} status={status} alertCount={alertCount} />
 
       <main className="main-col">
         {view === "evaluate" || view === "monitor" ? (
         <div className="stat-row">
-          <StatCard label="Model" value={modelVersion} hint="Active classifier" />
+          <StatCard label="Model" value={modelName} hint={modelRun ? `Run ${modelRun}` : "Active classifier"} />
           <StatCard label="Threshold" value={threshold} hint="Cost-optimised cut-off" />
           <StatCard label="Precision" value={pct(m?.precision)} hint="Held-out test set" />
           <StatCard label="Recall" value={pct(m?.recall)} hint="Fraud caught" tone="good" />

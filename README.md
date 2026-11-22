@@ -3,25 +3,61 @@
 **An end-to-end explainable transaction-risk decisioning system.**
 
 Given a payment transaction and its customer's recent history, MerchantShield estimates a
-fraud probability with a trained LightGBM model, explains that estimate with SHAP, and
-recommends a bounded action (allow / monitor / step-up / block) using a transparent,
-rule-based policy — never an irreversible financial action.
+fraud probability with a trained model, explains that estimate with SHAP, and recommends a
+bounded action (allow / monitor / step-up / block) using a transparent, rule-based policy —
+never an irreversible financial action.
 
-> **Prototype scope.** Built as a buildathon submission using synthetic transaction data.
-> Not connected to any real payment processor. No authentication. Not production-hardened.
-> See [Limitations](#limitations--prototype-scope) and
-> [External validation](#external-validation--ieee-cis) below for what this means for the
-> reported metrics.
+Around that core it runs a full model lifecycle: every day it generates fresh data, retrains
+five competing models, promotes a winner only if it clearly beats the current one (and starts
+serving it without a restart), watches the incoming data for drift, flags accounts that look
+unusual for their own owner, and hands those flags to a human analyst who decides whether to
+place a temporary hold. The system only ever recommends; people decide.
+
+> **Scope.** A final-year project built on synthetic transaction data. Not connected to any real
+> payment processor, account or customer: holds, closures and customer notices are simulated.
+> There is no login (an optional shared token protects analyst actions) and it is not
+> production-hardened. See [Limitations](#limitations--prototype-scope) and
+> [External validation](#external-validation--ieee-cis) for what this means for the reported
+> metrics.
+
+![Evaluating a transaction](screenshots/evaluate.png)
+
+## Quick start
+
+Needs Python 3.11+ and Node.js 20.19+ or 22.12+.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python ml/data/generate_synthetic.py && python ml/features/build_features.py   # the data is not committed
+(cd frontend && npm install && npm run build)
+python -m uvicorn backend.main:app --port 8000        # dashboard and API at http://localhost:8000
+```
+
+To see the whole loop work, in a second terminal run two ordinary days and then one with an injected
+spending shift (each takes about 20 seconds), then open the dashboard:
+
+```bash
+python -m ml.retrain.job
+python -m ml.retrain.job
+python -m ml.retrain.job --drift amount_scale=2.5
+python -m ml.cases.ingest        # queue the flagged accounts for review
+```
+
+Then look at **Retraining**, **Model registry**, **Drift & anomalies** (the shift is caught and
+attributed to the amount features) and **Alerts** (review a flagged account and place a simulated hold).
 
 ---
 
 ## Contents
 
 [The problem](#the-problem) · [Key capabilities](#key-capabilities) ·
-[Architecture](#architecture) · [Tech stack](#tech-stack) · [Dataset](#dataset) ·
+[Quick start](#quick-start) · [Architecture](#architecture) · [Tech stack](#tech-stack) · [Dataset](#dataset) ·
 [ML pipeline](#ml-pipeline) · [Model results](#model--evaluation-results) ·
 [Decision engine](#decision-engine) · [Explainability](#explainability) ·
 [External validation](#external-validation--ieee-cis) ·
+[Model contest](#model-contest-and-registry) · [Daily retraining](#daily-retraining) ·
+[Drift and anomalies](#drift-and-anomaly-monitoring) · [Alerts and holds](#alerts-and-account-holds) ·
 [Audit trail](#audit-trail) · [API](#api) · [Frontend](#frontend--dashboard) ·
 [Screenshots](#screenshots) · [Project structure](#project-structure) ·
 [Local setup](#local-setup--running-the-project) ·
@@ -68,6 +104,15 @@ into a bounded, auditable action.
 - **External validation** — the model and methodology were tested against the
   IEEE-CIS Fraud Detection dataset (real Vesta chargeback data). See
   [External validation](#external-validation--ieee-cis) for the honest results.
+- **Model contest with guarded promotion** — LightGBM, XGBoost, CatBoost, random forest and
+  logistic regression compete on the cost function; a winner replaces the serving model only if it
+  is explainable and beats the incumbent by a margin, with a one-command rollback.
+- **Daily automatic retraining** — a generator fitted to the demo data adds a new simulated day,
+  models retrain on a rolling split, and a promoted model serves immediately with its own threshold.
+- **Drift and anomaly monitoring** — PSI and KS drift tests (including on the model's own scores) and a
+  per-account detector that judges each customer against their own norm, with plain-language reasons.
+- **Human-in-the-loop alerts** — an analyst queue where only a named person can place a simulated
+  hold, release or close an account, with customer notices and a full audit trail.
 - **(V2) Historical transaction context** — optional prior transaction history enables
   behavioral pattern analysis; signal quality indicator (`MINIMAL`/`LIMITED`/`MODERATE`/`ESTABLISHED`)
   communicates confidence. Cold-start transactions explicitly flagged.
@@ -133,18 +178,35 @@ module converts it to a 0–100 risk score for legibility → a separate determi
 module decides the bounded action. Changing how risk is *displayed* can never silently
 change what *action* is taken.
 
+**Model lifecycle around it.** The scoring path above never changes by itself; this loop decides
+what it serves and who gets alerted:
+
+```mermaid
+flowchart LR
+    GEN[Daily batch generator<br/>fitted to the demo data] --> FEAT2[Features]
+    FEAT2 --> CONTEST[Model contest<br/>5 candidates, cost-based]
+    CONTEST --> REG[(Model registry<br/>runs, champion, rollback)]
+    REG -- "promote only if clearly better" --> SERVE[Serving model<br/>hot-swapped, own threshold]
+    FEAT2 --> DRIFT[Drift checks<br/>PSI / KS / score drift]
+    FEAT2 --> ANOM[Account anomaly detector]
+    ANOM --> Q[(Alert queue)]
+    Q --> HUMAN{{Analyst decides}}
+    HUMAN -- "hold / dismiss / release / close" --> NOTICE[Simulated customer notice<br/>+ audit trail]
+    style HUMAN fill:#fff3cd,stroke:#b8860b
+```
+
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| ML / data | Python, pandas, NumPy, scikit-learn, LightGBM, SHAP, scipy |
-| Backend | FastAPI, Pydantic, SQLAlchemy + SQLite |
-| Frontend | React 19, Vite, plain CSS (no UI framework) |
+| ML / data | Python, pandas, NumPy, scikit-learn, LightGBM, XGBoost, CatBoost, SHAP, scipy |
+| Backend | FastAPI, Pydantic, SQLAlchemy + SQLite (audit), SQLite (alert queue), file-based model registry |
+| Frontend | React 19, Vite, plain CSS (no UI framework), dark and light themes |
 | Testing | pytest, FastAPI TestClient |
 | Containerisation | Docker (multi-stage build), docker-compose |
 
-No Kubernetes, no message queue, no auth layer, no extra databases — deliberately
-minimal for a buildathon prototype.
+No Kubernetes, no message queue, no extra services — deliberately minimal. All state is plain
+files plus SQLite, which is why the app expects a single long-running server process.
 
 ## Dataset
 
@@ -349,172 +411,6 @@ Full analysis in
 [`docs/external_validation_ieee_cis.md`](docs/external_validation_ieee_cis.md), and
 [`docs/phase15_card_product_experiment.md`](docs/phase15_card_product_experiment.md).
 
-## Audit trail
-
-Every `/risk/evaluate` call writes: transaction ID, model version, probability,
-threshold, risk score/category, action, policy rule, policy reason, SHAP top-reasons,
-decision timestamp, and source tag (`demo` or `manual`). Deliberately **not** stored:
-customer ID, device ID, geo region — the audit trail proves what the system decided
-and why, without becoming a copy of merchant data. If the audit write fails, the API
-still returns the computed decision (`audit_persisted: false`).
-
-## API
-
-FastAPI backend with interactive docs at `/docs`. Full contract in
-[`docs/api.md`](docs/api.md).
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/health` | Liveness + model loaded status |
-| GET | `/model/info` | Frozen model metadata, threshold, val/test metrics |
-| POST | `/risk/score` | Probability + risk score (no audit write) |
-| POST | `/risk/explain` | + SHAP explanation (no audit write) |
-| POST | `/risk/evaluate` | Full pipeline: score + explain + decide + audit |
-| GET | `/audit-log` | Recent persisted decisions |
-
-## Frontend / dashboard
-
-A React/Vite dashboard for exploring the system: submit a transaction manually or
-pick a demo scenario, view the fraud probability, risk score, decision (always shown
-verbatim — `ALLOW` / `ALLOW_WITH_MONITORING` / `STEP_UP_VERIFICATION` / `BLOCK`),
-SHAP-grounded explanation, and recent audit log. The frontend speaks HTTP/JSON only;
-no backend Python imports. [`docs/frontend.md`](docs/frontend.md).
-
-## Screenshots
-
-No UI screenshots are committed — none were fabricated.
-[`screenshots/README.md`](screenshots/README.md) documents exactly what to capture
-(8 scenarios covering all risk tiers and UI panels) and gives both Docker and local
-quick-start paths for running the app.
-
-The threshold analysis chart (`ml/models/threshold_analysis_chart.png`) is the real
-matplotlib output from Phase 5 and is shown in [Model results](#model--evaluation-results)
-above.
-
-## Project structure
-
-```
-merchantshield-ai/
-├── backend/              # FastAPI app: routes, schemas, services
-├── ml/
-│   ├── data/             # Synthetic data generator
-│   ├── features/         # Leakage-safe feature engineering (build_features.py)
-│   ├── training/         # Baseline + candidate training scripts
-│   ├── evaluation/       # Cost model, threshold analysis, risk scoring, SHAP, decision engine
-│   ├── models/           # Frozen model artifacts + metadata (committed to Git)
-│   └── external/         # External validation track (IEEE-CIS, Phases 14–17)
-│       └── ieee/         # Adapter, features, split, experiments A+B,
-│                         #   card_product_features (Phase 15),
-│                         #   heldout_validation.py (Phase 17 — canonical held-out)
-├── frontend/             # React/Vite dashboard
-├── tests/                # pytest suite: leakage, explainability, decision engine, API,
-│                         #   IEEE-CIS adapter/features, card-product, Phase 17 validation
-├── docs/                 # Technical documentation and experiment reports
-│                         #   (see docs/README.md for index)
-├── screenshots/          # Capture guide (no screenshots committed)
-├── Dockerfile            # Multi-stage build: Node frontend + Python runtime
-├── docker-compose.yml    # docker compose up --build
-├── CONTRIBUTING.md       # Developer workflow, ML integrity rules, commit conventions
-├── requirements.txt      # Pinned Python dependencies
-├── .env.example
-└── README.md
-```
-
-## Local setup & running the project
-
-**Prerequisites:** Python 3.11+ (CI runs 3.13), Node.js 20.19+ or 22.12+.
-
-### Option A — Docker
-
-```bash
-docker compose up --build
-# http://localhost:8000          → dashboard
-# http://localhost:8000/docs     → interactive API docs
-```
-
-The image generates the synthetic dataset and builds the frontend at image-build time.
-Audit decisions persist via the `audit_data` named volume.
-
-> **Note:** The Dockerfile is CI-verified (Node 22.12.0-slim + python:3.13-slim,
-> matching CI exactly) but was not end-to-end run-tested in a Docker daemon during
-> development. If you encounter issues, use Option B.
-
-### Option B — Local setup
-
-```bash
-# 1. Install Python dependencies
-pip install -r requirements.txt
-
-# 2. Generate the synthetic dataset (not committed — CSVs are large and reproducible)
-python ml/data/generate_synthetic.py       # → ml/data/raw_transactions.csv
-python ml/features/build_features.py       # → ml/data/features.csv
-
-# 3. Build the frontend
-cd frontend && npm install && npm run build && cd ..
-
-# 4. Start the backend (serves the frontend at the same origin)
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-
-# 5. Open http://127.0.0.1:8000
-```
-
-For frontend live-reload development:
-```bash
-# terminal 1: python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-# terminal 2: cd frontend && npm run dev
-```
-
-### Regenerating the dataset / retraining
-
-The CSVs are not committed; the scripts are. To regenerate:
-```bash
-python ml/data/generate_synthetic.py
-python ml/features/build_features.py
-```
-
-To retrain from scratch (the frozen model artifact is already committed — this is
-optional):
-```bash
-python ml/training/train_baseline.py
-python ml/training/train_candidates.py
-python ml/evaluation/threshold_analysis.py
-```
-
-## Testing
-
-```bash
-pytest tests/
-```
-
-The suite covers: dataset leakage (chronological ordering verified on sampled
-customers), SHAP grounding/additivity/determinism, decision engine (all policy
-branches, exact boundary conditions, fail-safe behavior, proof SHAP cannot alter the
-action), API (valid requests, every documented error path, audit failure isolation),
-IEEE-CIS adapter/features/split (schema, prohibited columns, future-leakage
-prevention, label independence), card-product familiarity features (35 tests), and V2
-hardening (model output validation, feature bounds checking, signal quality grading,
-prior transaction context, schema migration).
-
-| Test file | Focus | Notes |
-|---|---|---|
-| `test_decision_engine.py` | All policy branches, boundary cases, fail-safe | ~1 s |
-| `test_explainability.py` | SHAP grounding, additivity, determinism | ~20 s |
-| `test_api.py` | Full API contract, every error path, audit isolation | ~15 s |
-| `test_v2_hardening.py` | **(V2)** Model validation, feature bounds, signal quality, schema migration | ~5 s |
-| `test_no_leakage.py` | Strictly-prior feature computation on 213k-row CSV | ~3 min |
-| `test_ieee_external.py` | IEEE-CIS adapter, features, split, leakage guards | ~1 min (non-integration) |
-| `test_card_product_features.py` | card_product_share and sibling features | ~4 s |
-| `test_phase17_validation.py` | Phase 17 pipeline: scoring, threshold selection, feature contract, result schema | ~13 s |
-
-**Current test count: 269 non-integration tests passing** (run `pytest tests/` — 10
-integration tests require the local IEEE-CIS CSV files and are automatically skipped
-in CI). CI runs the full suite on every push to `main`.
-
-**GitHub Actions CI** verifies on every push:
-- Backend job (Python 3.13, ubuntu-latest): install deps → generate data → build
-  features → build frontend → run full test suite
-- Frontend job (Node 22.12.0, ubuntu-latest): npm ci → npm run build
-
 ## Model contest and registry
 
 Five candidates (logistic regression, random forest, LightGBM, XGBoost, CatBoost) are trained on
@@ -638,6 +534,213 @@ started with `MS_ANALYST_TOKEN=...`, a matching `X-Analyst-Token` header (the Al
 it). Without that variable anyone who can reach the API can act, so set it before exposing this anywhere.
 Everything is simulated: there is no real account or customer behind a customer id.
 
+## Audit trail
+
+Every `/risk/evaluate` call writes: transaction ID, model version, probability,
+threshold, risk score/category, action, policy rule, policy reason, SHAP top-reasons,
+decision timestamp, and source tag (`demo` or `manual`). Deliberately **not** stored:
+customer ID, device ID, geo region — the audit trail proves what the system decided
+and why, without becoming a copy of merchant data. If the audit write fails, the API
+still returns the computed decision (`audit_persisted: false`).
+
+## API
+
+FastAPI backend with interactive docs at `/docs`. Full contract in
+[`docs/api.md`](docs/api.md).
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/health` | Liveness + model loaded status |
+| GET | `/model/info` | Frozen model metadata, threshold, val/test metrics |
+| POST | `/risk/score` | Probability + risk score (no audit write) |
+| POST | `/risk/explain` | + SHAP explanation (no audit write) |
+| POST | `/risk/evaluate` | Full pipeline: score + explain + decide + audit |
+| GET | `/audit-log` | Recent persisted decisions |
+| GET | `/registry/champion`, `/registry/runs`, `/registry/runs/{id}`, `/registry/events` | Model registry (read-only) |
+| GET | `/retrain/status`, `/retrain/log` | Scheduler state and retraining history (read-only) |
+| GET | `/monitoring/drift/latest`, `/monitoring/drift/history`, `/monitoring/anomalies/latest` | Drift and flagged accounts (read-only) |
+| GET | `/cases/summary`, `/cases/alerts`, `/cases/alerts/{id}`, `/cases/accounts`, `/cases/events` | Alert queue (read) |
+| POST | `/cases/alerts/{id}/hold`, `/cases/alerts/{id}/dismiss` | Analyst decisions on an alert |
+| POST | `/cases/accounts/{id}/release`, `/cases/accounts/{id}/close` | Analyst decisions on a held account |
+
+Everything except the four `POST` analyst actions is read-only on purpose: nothing reachable without
+an analyst name (and a token, if configured) can change which model serves or what happens to an account.
+The `/risk/*` responses carry the serving model's version and threshold, which change when a new
+champion is promoted.
+
+## Frontend / dashboard
+
+A React/Vite console with a dark default theme and a light toggle, a page per concern, and a URL per
+page (`#/alerts` and so on) so refresh, back and shared links land where you were. The frontend speaks
+HTTP/JSON only; no backend Python imports. [`docs/frontend.md`](docs/frontend.md) describes the
+original evaluation pages.
+
+| Page | What it shows |
+|---|---|
+| **Evaluate** | Score a demo scenario or manual transaction: probability, risk score, the action verbatim, SHAP reasons and contributions |
+| **Model & audit** | The serving model's metadata, held-out metrics, decision policy and the audit log |
+| **Model registry** | The latest contest across all candidates, which one serves, and the promotion and rollback history |
+| **Retraining** | Scheduler state, simulated-day progress and the run history |
+| **Drift & anomalies** | Whether the data shifted and why, and which accounts look unusual, with reasons |
+| **Alerts** | The analyst queue, review panel, held accounts and the audit trail |
+
+## Screenshots
+
+Captured from the running app by [`scripts/capture_screenshots.mjs`](scripts/capture_screenshots.mjs)
+(headless Chrome, no extra dependencies). All data shown is synthetic.
+
+| | |
+|---|---|
+| ![Light theme](screenshots/evaluate-light.png) **Evaluate, light theme** | ![Model registry](screenshots/registry.png) **Model registry** |
+| ![Retraining](screenshots/retraining.png) **Retraining** | ![Drift and anomalies](screenshots/drift.png) **Drift & anomalies: an injected spending shift, caught** |
+| ![Alerts](screenshots/alerts.png) **Alerts: analyst queue with review panel** | |
+
+The threshold analysis chart (`ml/models/threshold_analysis_chart.png`) is the real matplotlib output
+from the original threshold study and is shown in [Model results](#model--evaluation-results) above.
+
+## Project structure
+
+```
+merchantshield-ai/
+├── backend/
+│   ├── api/              # Routes: risk scoring, registry, retraining, monitoring, cases
+│   ├── services/         # Risk service, audit store, model loader and the champion provider (hot swap)
+│   ├── schemas/          # Request / response models
+│   └── config/           # Settings (paths, optional env variables)
+├── ml/
+│   ├── data/             # Synthetic generator and the daily batch generator (daily_batch.py)
+│   ├── features/         # Leakage-safe feature engineering (build_features.py)
+│   ├── training/         # Baseline + candidate training scripts (original study)
+│   ├── evaluation/       # Cost model, threshold analysis, risk scoring, SHAP, policy, decision engine
+│   ├── contest/          # Model contest: candidates, threshold selection, runner, CLI
+│   ├── registry/         # File-based model registry: promotion, rollback, audit events
+│   ├── retrain/          # Daily job and in-app scheduler
+│   ├── monitoring/       # Drift (PSI / KS) and account anomaly detection
+│   ├── cases/            # Alert queue, simulated holds, notices, audit trail (SQLite)
+│   ├── models/           # Frozen lgbm_v1 artifacts + metadata (committed)
+│   └── external/ieee/    # External validation on IEEE-CIS (adapter, experiments, held-out evaluation)
+├── frontend/             # React/Vite dashboard
+├── scripts/              # capture_screenshots.mjs
+├── tests/                # pytest suite (see Testing)
+├── docs/                 # Technical documentation and experiment reports (docs/README.md is the index)
+├── screenshots/          # Dashboard screenshots used in this README
+├── Dockerfile            # Multi-stage build: Node frontend + Python runtime
+├── docker-compose.yml    # docker compose up --build (with volumes for all state)
+├── CONTRIBUTING.md       # Developer workflow, ML integrity rules, commit conventions
+├── requirements.txt      # Pinned Python dependencies
+├── .env.example          # Optional environment variables, documented
+└── README.md
+```
+
+Generated at runtime and git-ignored: `ml/data/*.csv`, `ml/data_store/` (daily batches, logs, alert queue),
+`ml/registry_store/` (model registry), `backend/data/` (audit database), `.venv/`.
+
+## Local setup & running the project
+
+**Prerequisites:** Python 3.11+ (CI runs 3.13), Node.js 20.19+ or 22.12+.
+
+### Option A — Docker
+
+```bash
+docker compose up --build
+# http://localhost:8000          → dashboard
+# http://localhost:8000/docs     → interactive API docs
+```
+
+The image generates the synthetic dataset and builds the frontend at image-build time. The audit
+database, model registry and generated data / alert queue persist in named volumes. Compose turns on
+automatic retraining every 24 hours (`MS_RETRAIN_INTERVAL_HOURS`); run a cycle on demand with
+`docker compose exec api python -m ml.retrain.job`. Set `MS_ANALYST_TOKEN` to require a token for
+analyst actions (see `.env.example`).
+
+> **Note:** The Dockerfile uses the same base images as CI and its dependencies were checked against
+> PyPI for Python 3.13 on Linux, but it has **not been built or run** in a Docker daemon: the
+> maintainer's machine has none. If you hit a problem, use Option B and please report it.
+
+### Option B — Local setup
+
+```bash
+# 1. Install Python dependencies (a virtual environment is recommended)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt     # LightGBM needs the OpenMP runtime: `brew install libomp` on macOS
+
+# 2. Generate the synthetic dataset (not committed — CSVs are large and reproducible)
+python ml/data/generate_synthetic.py       # → ml/data/raw_transactions.csv
+python ml/features/build_features.py       # → ml/data/features.csv
+
+# 3. Build the frontend
+cd frontend && npm install && npm run build && cd ..
+
+# 4. Start the backend (serves the frontend at the same origin)
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+# 5. Open http://127.0.0.1:8000
+```
+
+For frontend live-reload development:
+```bash
+# terminal 1: python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+# terminal 2: cd frontend && npm run dev
+```
+
+### Regenerating the dataset / retraining
+
+The CSVs are not committed; the scripts are. To regenerate:
+```bash
+python ml/data/generate_synthetic.py
+python ml/features/build_features.py
+```
+
+The model lifecycle (contest, daily retraining, monitoring, alerts) is driven by
+`python -m ml.contest.run`, `python -m ml.retrain.job` and `python -m ml.cases.ingest`, described in the
+sections above. To schedule retraining, either set `MS_RETRAIN_INTERVAL_HOURS=24` when starting the API
+(single process only) or use cron:
+
+```
+0 2 * * *  cd /path/to/merchantshield-ai && .venv/bin/python -m ml.retrain.job >> ml/data_store/cron.log 2>&1
+```
+
+To retrain the original study from scratch (the frozen model artifact is already committed — this is
+optional):
+```bash
+python ml/training/train_baseline.py
+python ml/training/train_candidates.py
+python ml/evaluation/threshold_analysis.py
+```
+
+## Testing
+
+```bash
+pytest tests/
+```
+
+The suite covers dataset leakage, SHAP grounding and additivity for every promotable model family,
+the decision engine (every policy branch, boundary conditions, fail-safe behaviour, proof that SHAP cannot
+alter the action), the API (every documented error path, audit failure isolation), the IEEE-CIS adapter
+and held-out evaluation, and the model lifecycle: contest selection without test-set peeking, registry
+promotion and rollback, hot-swapping the champion, the daily generator mirroring the demo data, PSI and
+KS maths against hand-computed values, anomaly precision and recall on days the detector never saw, and
+the alert queue's rules (one decision per alert, closing needs a prior hold, no half-applied decisions).
+
+| Test file | Focus |
+|---|---|
+| `test_decision_engine.py`, `test_serving_any_champion.py` | Policy branches and boundaries; the threshold-aware policy matches the frozen one at 0.40; SHAP works for every promotable model |
+| `test_explainability.py`, `test_api.py`, `test_v2_hardening.py` | SHAP grounding, API contract and error paths, model-output validation |
+| `test_contest_registry.py`, `test_registry_api.py`, `test_model_provider.py` | Contest, guarded promotion, rollback, hot reload |
+| `test_daily_batch.py`, `test_retrain_job.py`, `test_retrain_scheduler.py` | Daily generator, retraining job, scheduler, status API |
+| `test_drift.py`, `test_anomaly.py`, `test_monitoring_job.py`, `test_monitoring_api.py` | Drift statistics, anomaly detector, job integration, API |
+| `test_cases_store.py`, `test_cases_api.py`, `test_cases_ingest.py` | Alert queue rules, analyst guard, ingestion |
+| `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
+| `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
+
+**Current result: 399 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
+
+**GitHub Actions CI** verifies on every push:
+- Backend job (Python 3.13, ubuntu-latest): install deps → generate data → build
+  features → build frontend → run full test suite
+- Frontend job (Node 22.12.0, ubuntu-latest): npm ci → npm run build
+
 ## Limitations / prototype scope
 
 - **Synthetic data only for production model.** All MerchantShield v1 metrics are on
@@ -646,9 +749,17 @@ Everything is simulated: there is no real account or customer behind a customer 
   ROC-AUC 0.771 and 79.8% recall on IEEE-CIS real-world e-commerce data, but precision
   is 6.3% at the selected operating point. The frozen production model does not transfer
   (ROC-AUC 0.443). See [External validation](#external-validation--ieee-cis).
-- **not production merchant data.** The real-data evaluation uses IEEE-CIS (Vesta Corporation
+- **Not production merchant data.** The real-data evaluation uses IEEE-CIS (Vesta Corporation
   US e-commerce). Not UPI, not POS, not Indian merchant transactions.
-- **No authentication.** The API and dashboard have no login/access control.
+- **Monitoring and retraining results are synthetic.** The daily data comes from a generator fitted to the
+  demo data, and the anomaly detector's precision and recall measure that generator's fraud patterns, not
+  real fraud. More public datasets (PaySim, Bank Account Fraud, Sparkov) are planned but not integrated.
+- **Champion churn.** Promotion compares models on a validation window that moves every day, so the
+  champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
+- **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if
+  `MS_ANALYST_TOKEN` is set, a shared token. Without it anyone who can reach the API can act.
+- **Single server process.** The registry, alert queue and scheduler are files and SQLite on one disk, so
+  run one worker. A serverless host (for example Vercel) cannot run the scheduler or keep that state.
 - **No live transaction store.** Prior transaction history must be supplied per-request
   by the caller — there is no live customer database.
 - **Cold-start transactions.** Customers with no prior history are scored neutrally
@@ -657,9 +768,11 @@ Everything is simulated: there is no real account or customer behind a customer 
   population-level behavior.
 - **SQLite audit storage.** Appropriate for a prototype; not a production audit solution.
   (V2) Includes idempotent schema migration for legacy deployments.
-- **ALLOW_WITH_MONITORING is a policy label.** No background monitoring service exists.
-- **No real payment integration.** Every action is a recommendation label returned as
-  data. The system cannot move money or freeze accounts.
-- **Docker not end-to-end run-tested.** The Dockerfile was written against CI-verified
-  base images and syntax-checked, but was not executed in a Docker daemon during
-  development on this machine.
+- **ALLOW_WITH_MONITORING is a policy label.** The daily monitoring job flags unusual accounts, but
+  nothing watches individual transactions in real time.
+- **No real payment integration.** Every action is a recommendation. Holds, closures and customer
+  notices in the Alerts page are simulated records; nothing can move money or freeze a real account, and
+  no notice is ever sent.
+- **Man-in-the-middle attacks are not detected as such.** The system sees their symptoms (new devices,
+  unusual amounts, drained spend), not the network attack itself.
+- **Docker not built or run.** See the note under [Local setup](#local-setup--running-the-project).

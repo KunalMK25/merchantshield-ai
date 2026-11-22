@@ -1,5 +1,8 @@
 # API Documentation (Phase 8)
 
+> This document covers the scoring endpoints (`/health`, `/model/info`, `/risk/*`, `/audit-log`). The registry, retraining, monitoring and alert-queue endpoints are listed in the root README and described live at `/docs`.
+
+
 ## Request → response flow
 
 ```

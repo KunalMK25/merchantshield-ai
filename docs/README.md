@@ -17,6 +17,15 @@ For the project overview, quick-start, and results summary see the root
 
 ---
 
+## Model lifecycle
+
+The contest and registry, daily retraining, drift and anomaly monitoring, and the alert workflow are
+documented in the root [README.md](../README.md) (sections "Model contest and registry" through
+"Alerts and account holds"). The complete, always-current endpoint reference for those routes is the
+interactive API documentation served at `/docs`; [api.md](api.md) covers the original scoring endpoints.
+
+---
+
 ## External validation documentation
 
 | Document | What it covers |

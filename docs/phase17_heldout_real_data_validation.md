@@ -416,7 +416,7 @@ and recall. Precision is structurally limited by prevalence and missing features
 
 ## 16. Objective assessment
 
-**Does MerchantShield now satisfy the AI Risk Manager track requirements?**
+**Does MerchantShield now meet the project's evaluation requirements?**
 
 | Requirement | Status | Evidence |
 |---|---|---|

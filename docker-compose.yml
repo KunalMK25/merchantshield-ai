@@ -8,6 +8,9 @@
 # The data generation and frontend build happen inside the image at build time,
 # not at container start, so `docker compose up` after the first build is instant.
 #
+# Run a retraining cycle on demand:
+#   docker compose exec api python -m ml.retrain.job
+#
 # For frontend development with live reload, see README.md → "Local setup".
 
 services:
@@ -24,6 +27,14 @@ services:
     # with an empty audit log.
     volumes:
       - audit_data:/app/backend/data
+      - registry_data:/app/ml/registry_store   # model registry
+      - ops_data:/app/ml/data_store            # daily batches, logs, alert queue
+    environment:
+      # Retrain automatically every N hours (0 disables). Needs the single worker this image runs.
+      MS_RETRAIN_INTERVAL_HOURS: ${MS_RETRAIN_INTERVAL_HOURS:-24}
+      # Optional shared secret for analyst actions (hold / dismiss / release / close).
+      # Leave empty for the open demo; set it before exposing the app anywhere.
+      MS_ANALYST_TOKEN: ${MS_ANALYST_TOKEN:-}
     # Restart automatically on crash (not on explicit `docker compose stop`)
     restart: unless-stopped
     # Environment variables (none required; see .env.example for reference)
@@ -32,4 +43,8 @@ services:
 
 volumes:
   audit_data:
+    driver: local
+  registry_data:
+    driver: local
+  ops_data:
     driver: local

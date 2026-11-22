@@ -12,8 +12,19 @@
 #   ✓  Built React frontend (produced in Stage 1)
 #   ✓  Generated synthetic dataset and features (produced during image build)
 #   ✗  No real transaction data — synthetic data only (see README, Dataset section)
-#   ✗  No authentication — prototype only, not for public exposure as-is
-#   ✗  No production WSGI/ASGI tuning (single uvicorn worker, appropriate for demo)
+#   ✗  No login — optional shared token for analyst actions only (MS_ANALYST_TOKEN);
+#      prototype, not for public exposure as-is
+#   ✗  No production WSGI/ASGI tuning. Keep ONE uvicorn worker: the in-app retraining
+#      scheduler (MS_RETRAIN_INTERVAL_HOURS) and the file-based model registry assume it.
+#
+# State that must survive restarts (mounted as volumes by docker-compose.yml):
+#   backend/data         audit database
+#   ml/registry_store    model registry (contest runs, champion, history)
+#   ml/data_store        generated daily batches, retraining log, drift log, alert queue
+#
+# NOT TESTED HERE: the maintainer's machine has no Docker, so this file has been reviewed
+# (dependency wheels checked against PyPI for Python 3.13 Linux) but not built. If a build
+# fails, please open an issue.
 #
 # Build:   docker build -t merchantshield-ai .
 # Run:     docker run -p 8000:8000 merchantshield-ai
@@ -78,6 +89,10 @@ RUN python ml/data/generate_synthetic.py && \
 
 # Expose the uvicorn port
 EXPOSE 8000
+
+# Report unhealthy if the API stops answering (it answers /health even when degraded)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 
 # Run the FastAPI backend.
 # --host 0.0.0.0 is required inside Docker so the port is reachable from the

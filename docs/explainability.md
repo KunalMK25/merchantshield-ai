@@ -25,7 +25,7 @@ considered and rejected for this component:
   coefficients to read off.
 
 Given the model is tree-based and per-transaction, per-decision explanations were
-a hard requirement (Section 9/11 of the brief), TreeExplainer is the correct tool,
+a hard requirement (Section 9/11 of the project specification), TreeExplainer is the correct tool,
 not a default reflex.
 
 ## Consistency verification
@@ -70,7 +70,7 @@ outcome rather than always adopting a "why flagged" tone.
   the transaction is actually fraud, and the explanation should not be read as a
   certainty statement. This is exactly why every action downstream is a
   *recommendation for human review*, not an automated financial action (Section 10 of
-  the brief, implemented in Phase 10).
+  the project specification, implemented in Phase 10).
 - **Correlated features can split credit.** `amount` and `amount_vs_avg_ratio` are
   related; SHAP can distribute "credit" for an unusual amount across both rather than
   cleanly attributing it to one, which can make the top-5 list slightly redundant

@@ -76,7 +76,7 @@ or low-stakes on its own:
 
 The engine has no access to a payments API, no ability to freeze funds, close
 accounts, or contact a customer directly. It can only return a label. This is
-intentional, and matches the buildathon brief's "recommend or simulate, never perform
+intentional, and matches the project's design rule: "recommend or simulate, never perform
 irreversible real-world financial actions" requirement — and it's also just good risk
 engineering: the system that assigns the risk score should not be the same system
 that has unilateral authority to act on it.

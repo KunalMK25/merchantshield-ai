@@ -85,7 +85,7 @@ export function formatTimestamp(isoString) {
 // unnecessarily (see Phase 9 requirement: don't expose sensitive identifiers
 // unnecessarily). Full IDs remain available in the underlying data/audit log,
 // this only affects compact table/summary display.
-export function shortId(id, keep = 6) {
+export function shortId(id, keep = 12) {
   if (!id) return "—";
   return id.length <= keep + 3 ? id : `…${id.slice(-keep)}`;
 }
