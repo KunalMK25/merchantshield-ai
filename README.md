@@ -515,6 +515,27 @@ in CI). CI runs the full suite on every push to `main`.
   features → build frontend → run full test suite
 - Frontend job (Node 22.12.0, ubuntu-latest): npm ci → npm run build
 
+## Model contest and registry
+
+Five candidates (logistic regression, random forest, LightGBM, XGBoost, CatBoost) are trained on
+the same chronological split and compared on the project's cost function, not accuracy. Each model
+gets its own threshold chosen on validation only (lowest cost with recall at least 80%); the test
+set is scored for reporting and never influences selection.
+
+```bash
+python -m ml.contest.run            # run the contest, then try to promote the winner
+python -m ml.contest.run --rollback # restore the previous champion
+```
+
+Promotion is guarded. The winner replaces the serving model only if it is tree-based (decisions
+are explained with SHAP) and beats the incumbent's validation cost by at least 3%, with both
+re-scored on the same validation data. Every run, promotion, declined challenger and rollback is
+recorded under `ml/registry_store/` (git-ignored) and shown on the dashboard's **Model registry**
+page. The registry API (`/registry/*`) is read-only on purpose.
+
+On the repo's synthetic data XGBoost narrowly wins validation (about 2% lower cost) but is worse on
+the held-out test set, so the 3% margin correctly keeps LightGBM as champion.
+
 ## Limitations / prototype scope
 
 - **Synthetic data only for production model.** All MerchantShield v1 metrics are on

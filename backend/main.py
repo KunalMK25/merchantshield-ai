@@ -24,6 +24,8 @@ from backend.config import settings
 from backend.services.model_loader import load_model_bundle, ModelUnavailableError
 from backend.services.audit_service import AuditStore
 from backend.api.routes import router
+from backend.api.registry_routes import router as registry_router
+from ml.registry.store import ModelRegistry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("merchantshield")
@@ -47,6 +49,12 @@ async def lifespan(app: FastAPI):
         logger.error(f"AUDIT STORE FAILED TO INITIALIZE: {e}")
         app.state.audit_store = None
 
+    try:
+        app.state.registry = ModelRegistry(settings.REGISTRY_DIR)
+    except Exception as e:
+        logger.error(f"MODEL REGISTRY UNAVAILABLE: {e}")
+        app.state.registry = None
+
     yield
 
     # no special teardown needed for sqlite/joblib-loaded objects
@@ -60,6 +68,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(registry_router)
 
 # CORS is only needed when the frontend runs as a separate dev-server process
 # (`npm run dev` on a different port) against this API during development. The

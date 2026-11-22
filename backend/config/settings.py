@@ -15,6 +15,8 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)  # merchantshield-ai/
 MODEL_PATH = os.path.join(PROJECT_ROOT, "ml", "models", "candidate_lgbm_v1.pkl")
 MODEL_METADATA_PATH = os.path.join(PROJECT_ROOT, "ml", "models", "lgbm_v1_metadata.json")
 
+REGISTRY_DIR = os.path.join(PROJECT_ROOT, "ml", "registry_store")
+
 AUDIT_DB_DIR = os.path.join(PROJECT_ROOT, "backend", "data")
 AUDIT_DB_PATH = os.path.join(AUDIT_DB_DIR, "audit.db")
 AUDIT_DB_URL = f"sqlite:///{AUDIT_DB_PATH}"

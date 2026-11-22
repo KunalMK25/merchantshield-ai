@@ -1,6 +1,7 @@
 const ICONS = {
   evaluate: "M12 3l8 3v6c0 4.4-3.2 8.3-8 9-4.8-.7-8-4.6-8-9V6l8-3z M9 12l2 2 4-4",
   monitor: "M3 17l5-6 4 3 5-8 4 5 M3 21h18",
+  registry: "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
 };
 
 function Icon({ name }) {
@@ -15,6 +16,7 @@ function Icon({ name }) {
 const NAV = [
   { id: "evaluate", label: "Evaluate", icon: "evaluate" },
   { id: "monitor", label: "Model & audit", icon: "monitor" },
+  { id: "registry", label: "Model registry", icon: "registry" },
 ];
 
 export default function Sidebar({ view, onNavigate, theme, onToggleTheme, status }) {

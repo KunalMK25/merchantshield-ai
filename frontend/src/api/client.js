@@ -59,6 +59,12 @@ export const api = {
   evaluateTransaction: (payload) =>
     request("/risk/evaluate", { method: "POST", body: JSON.stringify(payload) }),
 
+  getRegistryChampion: () => request("/registry/champion"),
+
+  getRegistryRuns: () => request("/registry/runs"),
+
+  getRegistryEvents: () => request("/registry/events"),
+
   getAuditLog: (limit = 25) => request(`/audit-log?limit=${limit}`),
 };
 
