@@ -18,8 +18,9 @@ from ml.contest.runner import run_contest
 from ml.contest.selection import select_winner
 from ml.datasets.schema import profile
 from ml.datasets.workspace import DEFAULT_ROOT, Workspace
-from ml.features.build_features import build_features
+from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import SEVERITIES, AnomalyConfig, AnomalyDetector, account_day_table
+from ml.monitoring.supervised_alerts import account_day_scores, calibrate_thresholds, detect_supervised
 from ml.registry.store import _clean
 from ml.retrain.job import RetrainConfig, rolling_split
 
@@ -43,6 +44,29 @@ def _anomaly(table, test_start_day, config, label):
             "tiers": {"critical": _tier(flags, truth, ["critical"]),
                       "critical_plus_high": _tier(flags, truth, ["critical", "high"]),
                       "everything_flagged": _tier(flags, truth, list(SEVERITIES))}}
+
+
+def _supervised(winner, val, test, origin) -> dict:
+    """Account alerts from the winning model's scores, thresholds chosen on validation, test scored once."""
+    label = {"config": "supervised"}
+    if winner is None:
+        return {**label, "error": "no model met the recall floor, so there is no supervised model to score with"}
+    model = winner["model"]
+    pv = account_day_scores(val, model.predict_proba(val[FEATURE_COLUMNS])[:, 1], origin)
+    pt = account_day_scores(test, model.predict_proba(test[FEATURE_COLUMNS])[:, 1], origin)
+    try:
+        cal = calibrate_thresholds(pv)
+    except ValueError as e:
+        return {**label, "error": str(e)}
+    flags = detect_supervised(pt, cal["critical"], cal["high"])
+    truth = set(map(tuple, pt.loc[pt["fraud"] == 1, ["customer_id", "day"]].to_numpy()))
+    chosen = next(g for g in cal["grid"] if g["critical"] == cal["critical"] and g["high"] == cal["high"])
+    return {**label, "model": winner["name"], "thresholds": {"critical": cal["critical"], "high": cal["high"]},
+            "validation": {"critical": chosen["critical_tier"], "critical_plus_high": chosen["critical_plus_high"]},
+            "accounts_checked": int(len(pt)), "compromised_account_days": len(truth),
+            "tiers": {"critical": _tier(flags, truth, ["critical"]),
+                      "critical_plus_high": _tier(flags, truth, ["critical", "high"])},
+            "calibrated_on": "validation days only; the test days were scored once"}
 
 
 def evaluate_workspace(ws: Workspace, models=None, val_days=None, test_days=None) -> dict:
@@ -80,6 +104,8 @@ def evaluate_workspace(ws: Workspace, models=None, val_days=None, test_days=None
                      "train_seconds": e["train_seconds"]} for e in entries],
         "winner": winner["name"] if winner else None,
     }
+    report["anomaly_supervised"] = _supervised(
+        winner, val, test, pd.to_datetime(feats["timestamp"]).min().normalize())
     default_anomaly = _anomaly(table, test_start, AnomalyConfig(), "default")
     if calibration:
         cfg = AnomalyConfig(quantile=calibration["quantile"], iso_quantile=calibration["iso_quantile"])
@@ -123,10 +149,13 @@ def main(argv=None):
         star = " *" if m["name"] == r["winner"] else ""
         print(f"{m['name']:22s}{m['val']['threshold']:>5.2f}{m['test']['precision']:>11.1%}"
               f"{m['test']['recall']:>8.1%}{m['test']['cost']:>14,.0f}{star}")
-    for key, title in (("anomaly_default", "default thresholds"), ("anomaly", None)):
+    for key, title in (("anomaly_default", "default thresholds"), ("anomaly", None), ("anomaly_supervised", None)):
         an = r.get(key)
         if an is None:
             continue
+        if title is None and an["config"] == "supervised" and "thresholds" in an:
+            t = an["thresholds"]
+            title = f"supervised alerts ({an['model']}; critical >= {t['critical']}, high >= {t['high']}, chosen on validation)"
         title = title or ("calibrated thresholds" if an["config"] == "calibrated" else "default thresholds")
         if "error" in an:
             print(f"\nAccount detector ({title}): not run ({an['error']})")

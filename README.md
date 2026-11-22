@@ -553,7 +553,7 @@ kaggle datasets download -d kartik2112/fraud-detection -p data/raw/sparkov --unz
 python -m ml.datasets.prepare sparkov --path data/raw/sparkov   # validate, profile, split, write a workspace
 python -m ml.datasets.calibrate sparkov                         # tune the account detector on validation days only
 python -m ml.datasets.evaluate sparkov                          # contest + account detector on the real labels
-python -m ml.retrain.job --workspace sparkov                    # replay the next real day, retrain, monitor
+python -m ml.retrain.job --workspace sparkov --alerts supervised   # replay the next real day, retrain, monitor, alert
 ```
 
 | Dataset | Fit | Why |
@@ -605,8 +605,8 @@ cost is an assumed $3.80 (8% of the median amount); costs are in dollars.
 - Precision is about 10% to 13% at the operating point (recall 85% to 87%), far below the synthetic data's
   78%. Two things drive that: the base rate is only 0.27% in the test window, and this dataset has no device
   data, so `new_device_flag` carries no signal. The ROC-AUC of about 0.985 shows the ranking is strong.
-- **The account anomaly detector does not transfer well, and recalibrating only helped a little** (next
-  section).
+- **The unsupervised account detector does not transfer well, and recalibrating only helped a little** (next
+  section). Account alerts from the supervised model's scores do far better on this data (the section after).
 - This is one run, with an assumed cost scale, on a simulated (Sparkov-generated) dataset, not real bank data.
 
 ### Recalibrating the account detector
@@ -640,6 +640,40 @@ like a big gain on validation did not hold. Likely causes, not verified: only 17
 account-days, a flat score landscape (several settings tied), and a lower fraud rate in the test window
 (0.23% against 0.32%). The supervised models, which see each transaction, are clearly the better detector on
 this data; the account-level signals are best read as a weak supplement here.
+
+### Account alerts from the supervised model's scores
+
+The unsupervised detector only sees day totals; the supervised model sees every payment (amount, hour, velocity,
+history). So an account-day's risk can instead be the highest fraud probability among that day's payments, with
+two distinct tier thresholds chosen on **validation days only** (`ml/monitoring/supervised_alerts.py`). The
+thresholds are chosen per model, because class weighting inflates probabilities (useful thresholds sit near
+0.99 and differ between LightGBM, XGBoost and the others), and the grid reaches up to 0.9999. It needs fraud
+labels, so it applies to a dataset workspace, not to a brand-new deployment.
+
+Result on the sealed test window (133 compromised account-days among 57,976), using the contest's winner
+(LightGBM, critical >= 0.995, high >= 0.99):
+
+| Alert source | Critical tier | Critical + high |
+|---|---|---|
+| Default unsupervised | 13% precision, 35% recall (351 flagged) | 12%, 72% (811 flagged) |
+| Calibrated unsupervised | 13% precision, 44% recall (458 flagged) | 11%, 65% (776 flagged) |
+| **Supervised** | **57% precision, 64% recall** (150 flagged) | **34%, 83%** (330 flagged) |
+
+It roughly quadruples precision at higher recall with a third of the flags. On validation the critical tier had
+been 69% precise at 59% recall, so precision fell about 12 points out of sample, a modest drop and not the collapse
+the unsupervised calibration showed. Enable it for the daily job with `--alerts supervised`; the job re-chooses
+the thresholds each run from its own validation window for whichever model is serving, and falls back to the
+unsupervised detector when there is no champion yet or no positives to calibrate on.
+
+Caveats, stated plainly:
+- One run on one simulated dataset, with the fraud rate lower in the test window (0.23%) than in validation (0.32%).
+- Labels here arrive instantly. A real deployment gets chargeback labels weeks late, so the validation window
+  the thresholds are chosen on would lag, and results would likely be worse.
+- The model's early stopping used the validation days too, a mild reuse that the contest shares.
+- Process disclosure: a first prototype used a threshold grid that stopped at 0.95 and chose the grid's edge. I
+  extended the grid, for exactly that reason, after seeing validation numbers; I had also seen that prototype's
+  (poor) test numbers, so this is not a perfectly blind design. The final run above is the first with the
+  finished design.
 
 Downloading on a network that inspects HTTPS (a corporate gateway) fails with `CERTIFICATE_VERIFY_FAILED`
 because Python does not trust the gateway's certificate. If you accept routing your Kaggle login through that
@@ -861,10 +895,11 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_cases_store.py`, `test_cases_api.py`, `test_cases_ingest.py` | Alert queue rules, analyst guard, ingestion |
 | `test_datasets.py`, `test_dataset_workspace.py`, `test_dataset_evaluate.py` | Loaders for each dataset layout, validation and fit rating, prepare, real-day replay, evaluation |
 | `test_anomaly_calibration.py`, `test_dataset_calibration.py` | Config-driven detector, quantile thresholds, validation-only tuning, test-label immunity, overlap guard |
+| `test_supervised_alerts.py`, `test_supervised_integration.py` | Account-day scores, distinct-tier thresholds, test-label immunity, job fallback and integration |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 450 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 467 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
@@ -886,8 +921,8 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   demo data, and the anomaly detector's precision and recall measure that generator's fraud patterns, not
   real fraud. Loaders for public datasets exist (see [Real public datasets](#real-public-datasets)) but
   have not been run against the real downloads.
-- **The account detector is weak on real data.** On Sparkov, even after calibration, its critical tier is about
-  13% precise on unseen days. The supervised models are far better there.
+- **The unsupervised account detector is weak on real data.** On Sparkov, even after calibration, its critical tier
+  is about 13% precise on unseen days. Supervised alerts (`--alerts supervised`) reach 57% there, but need labels.
 - **Champion churn.** Promotion compares models on a validation window that moves every day, so the
   champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
 - **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if

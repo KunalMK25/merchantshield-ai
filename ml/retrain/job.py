@@ -39,6 +39,7 @@ from ml.evaluation.cost_model import CostAssumptions
 from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import AnomalyConfig, AnomalyDetector, account_day_table, summarize, to_records
 from ml.monitoring.drift import drift_report
+from ml.monitoring.supervised_alerts import account_day_scores, calibrate_thresholds, detect_supervised
 from ml.datasets.workspace import Workspace
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
 from ml.training.train_baseline import chronological_split
@@ -66,6 +67,7 @@ class RetrainConfig:
     stream_path: Optional[str] = None  # held-back real days to replay (a prepared dataset workspace)
     cost: CostAssumptions = field(default_factory=CostAssumptions)
     anomaly: Optional[AnomalyConfig] = None    # calibrated detector thresholds for a dataset workspace
+    alert_source: str = "unsupervised"         # or "supervised": alerts from the serving model's scores (needs labels)
 
     @classmethod
     def from_workspace(cls, ws: Workspace, **overrides):
@@ -117,7 +119,8 @@ BASELINE_DAYS = 40      # oldest history used as the slow-creep drift reference
 ANOMALY_REFERENCE_DAYS = 30
 
 
-def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None) -> dict:
+def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
+             alert_source="unsupervised", val_feats=None) -> dict:
     """
     Drift and account-anomaly checks on the newly generated days. Runs BEFORE promotion so
     the scores it watches come from the model that was actually serving. Writes the full
@@ -140,18 +143,34 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None) -
         score_cur = model.predict_proba(cur[FEATURE_COLUMNS])[:, 1]
     drift = drift_report(recent, baseline, cur, score_ref, score_cur)
 
-    table = account_day_table(feats, origin=origin)
-    reference = table[(table["day"] >= first - ANOMALY_REFERENCE_DAYS) & (table["day"] < first)]
-    detector = AnomalyDetector(config=anomaly_config).fit(reference)
-    current = table[table["day"].isin(sim_days)]
-    flags = detector.detect(current)
-    summary = summarize(flags, n_accounts=len(current), reference_rate=detector.reference_rate)
+    used, fallback, thresholds = "unsupervised", None, None
+    flags = n_by_day = reference_rate = None
+    if alert_source == "supervised":
+        if champ is None:
+            fallback = "no champion model yet to score with"
+        else:
+            try:
+                pv = account_day_scores(val_feats, model.predict_proba(val_feats[FEATURE_COLUMNS])[:, 1], origin)
+                cal = calibrate_thresholds(pv)                       # validation days only, for this model
+                pc = account_day_scores(cur, score_cur, origin)
+                flags = detect_supervised(pc, cal["critical"], cal["high"])
+                n_by_day, reference_rate = pc.groupby("day").size().to_dict(), 0.0
+                used, thresholds = "supervised", {"critical": cal["critical"], "high": cal["high"]}
+            except ValueError as e:
+                fallback = str(e)
+    if used == "unsupervised":
+        table = account_day_table(feats, origin=origin)
+        reference = table[(table["day"] >= first - ANOMALY_REFERENCE_DAYS) & (table["day"] < first)]
+        detector = AnomalyDetector(config=anomaly_config).fit(reference)
+        current = table[table["day"].isin(sim_days)]
+        flags = detector.detect(current)
+        n_by_day, reference_rate = current.groupby("day").size().to_dict(), detector.reference_rate
+    summary = summarize(flags, n_accounts=sum(n_by_day.values()), reference_rate=reference_rate)
 
     os.makedirs(os.path.join(data_dir, "anomalies"), exist_ok=True)
     for d in sim_days:
         day_flags = flags[flags["day"] == d]
-        day_summary = summarize(day_flags, n_accounts=int((current["day"] == d).sum()),
-                                reference_rate=detector.reference_rate)
+        day_summary = summarize(day_flags, n_accounts=int(n_by_day.get(d, 0)), reference_rate=reference_rate)
         with open(os.path.join(data_dir, "anomalies", f"day_{d:04d}.json"), "w") as f:
             json.dump(_clean({"day": d, "job_id": job_id, "summary": day_summary,
                               "records": to_records(day_flags)}), f)
@@ -172,6 +191,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None) -
     return {
         "alerts_created": alerts_created, "alerts_error": alerts_error,
         "anomaly_quantile": anomaly_config.quantile if anomaly_config else None,
+        "alert_source": used, "alert_fallback_reason": fallback, "alert_thresholds": thresholds,
         "drift_status": drift["status"], "max_psi": drift["max_psi"],
         "flagged_features": drift["flagged_features"],
         "score_psi": drift["score"]["psi"] if drift["score"] else None,
@@ -198,6 +218,8 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
     unknown = [n for n in names if n not in CANDIDATES]
     if unknown:
         raise ValueError(f"Unknown candidate(s): {unknown}")  # before any state changes
+    if c.alert_source not in ("unsupervised", "supervised"):
+        raise ValueError(f"alert_source must be 'unsupervised' or 'supervised', got {c.alert_source!r}")
 
     drift = c.drift or DriftConfig()
     with _exclusive(c.data_dir):
@@ -244,7 +266,8 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
             if c.bootstrap:
                 bootstrap_champion(registry)
             try:
-                monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"], c.anomaly)
+                monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"], c.anomaly,
+                                    c.alert_source, val)
             except Exception as e:  # monitoring must never stop retraining; the error is recorded
                 monitoring = {"error": f"{type(e).__name__}: {e}"}
             cost = c.cost
@@ -283,6 +306,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--workspace", help="run on a prepared dataset workspace (see ml.datasets.prepare)")
     ap.add_argument("--workspace-root", default=None)
+    ap.add_argument("--alerts", choices=["unsupervised", "supervised"], default=None,
+                    help="where account alerts come from (supervised needs fraud labels and a champion model)")
     ap.add_argument("--days", type=int, default=1)
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--margin", type=float, default=0.03)
@@ -291,6 +316,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     try:
         opts = dict(days=args.days, models=args.models, margin=args.margin, drift=_parse_drift(args.drift))
+        if args.alerts:
+            opts["alert_source"] = args.alerts
         if args.workspace:
             kw = {"root": args.workspace_root} if args.workspace_root else {}
             config = RetrainConfig.from_workspace(Workspace(args.workspace, **kw), **opts)
