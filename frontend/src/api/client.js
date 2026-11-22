@@ -69,6 +69,15 @@ export const api = {
 
   getRetrainLog: (limit = 30) => request(`/retrain/log?limit=${limit}`),
 
+  getDriftLatest: () => request("/monitoring/drift/latest"),
+
+  getDriftHistory: (limit = 30) => request(`/monitoring/drift/history?limit=${limit}`),
+
+  getAnomalies: (severities = []) => {
+    const q = severities.map((s) => `severity=${s}`).join("&");
+    return request(`/monitoring/anomalies/latest${q ? `?${q}` : ""}`);
+  },
+
   getAuditLog: (limit = 25) => request(`/audit-log?limit=${limit}`),
 };
 

@@ -564,6 +564,46 @@ python -m ml.retrain.job --drift amount_scale=2.5   # shift the world on purpose
   day, so day-to-day noise can exceed the 3% margin and the champion may change on consecutive days.
   Raise `--margin` or add a cooldown if that churn is unwanted.
 
+## Drift and anomaly monitoring
+
+Every retraining cycle also checks the new day for two different problems. Results are written to
+`ml/data_store/` and shown on the dashboard's **Drift & anomalies** page.
+
+**Data drift.** The new day is compared with the trailing 14 days and with the oldest history using
+the Population Stability Index (below 0.10 stable, 0.10 to 0.25 watch, above 0.25 drift), with the
+KS statistic alongside. The serving model's score distribution is monitored too, because shifts spread
+thinly over many features appear there first. Two choices came from measuring the data: counts that
+grow as history accumulates (`prior_txn_count`, `account_age_days`) are compared with the recent
+window only, and weekday is not monitored (a one-day window has a single weekday). A normal day
+stays under PSI 0.07 on every feature; an injected 2.5x spending shift reads 3.2 and is attributed to
+the amount features.
+
+**Account anomalies.** Each customer-day is judged against that customer's own earlier norm, not
+against other customers. An Isolation Forest (unsupervised, fitted on earlier days only) is combined
+with five readable signals: new device and region together, an unusually large payment, repeated
+failed payments, a burst of activity, and a surge in total spend. Severity is the forest flag plus the
+number of signals: three or more is critical, two is high, one is watch.
+
+On the repo's synthetic data, scored on days the detector never saw (153 compromised account-days out
+of 22,791):
+
+| Level | Flagged | Precision | Recall |
+|---|---|---|---|
+| Critical | 79 | 100% | 52% |
+| Critical + high | 114 | 98% | 73% |
+| Everything flagged | 181 | 66% | 78% |
+
+These numbers describe this generator's fraud patterns, not real fraud. A compromise that looks like
+the customer's normal behaviour is invisible by design, relative signals need a few earlier days per
+customer, and when the whole population shifts at once many ordinary accounts cross their own
+thresholds (an injected spending shift raised flags from about 10 to 214), which the page warns about.
+Flags are recommendations for a person to review. Nothing here holds, blocks or closes an account.
+
+```bash
+python -m ml.retrain.job --drift amount_scale=2.5   # inject a spending shift and watch it get caught
+python -m ml.retrain.job --drift fraud_rate_multiplier=40   # inject a fraud surge
+```
+
 ## Limitations / prototype scope
 
 - **Synthetic data only for production model.** All MerchantShield v1 metrics are on

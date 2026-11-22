@@ -3,6 +3,7 @@ const ICONS = {
   monitor: "M3 17l5-6 4 3 5-8 4 5 M3 21h18",
   registry: "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
   retrain: "M21 12a9 9 0 1 1-3-6.7 M21 4v5h-5",
+  drift: "M3 12h4l3-8 4 16 3-8h4",
 };
 
 function Icon({ name }) {
@@ -19,6 +20,7 @@ const NAV = [
   { id: "monitor", label: "Model & audit", icon: "monitor" },
   { id: "registry", label: "Model registry", icon: "registry" },
   { id: "retrain", label: "Retraining", icon: "retrain" },
+  { id: "drift", label: "Drift & anomalies", icon: "drift" },
 ];
 
 export default function Sidebar({ view, onNavigate, theme, onToggleTheme, status }) {

@@ -10,6 +10,7 @@ import Sidebar from "./components/Sidebar";
 import StatCard from "./components/StatCard";
 import RegistryPage from "./components/RegistryPage";
 import RetrainPage from "./components/RetrainPage";
+import DriftPage from "./components/DriftPage";
 import { useTheme } from "./hooks/useTheme";
 import "./styles/App.css";
 
@@ -127,14 +128,14 @@ export default function App() {
       <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} />
 
       <main className="main-col">
-        {view !== "registry" && view !== "retrain" && (
+        {view === "evaluate" || view === "monitor" ? (
         <div className="stat-row">
           <StatCard label="Model" value={modelVersion} hint="Active classifier" />
           <StatCard label="Threshold" value={threshold} hint="Cost-optimised cut-off" />
           <StatCard label="Precision" value={pct(m?.precision)} hint="Held-out test set" />
           <StatCard label="Recall" value={pct(m?.recall)} hint="Fraud caught" tone="good" />
         </div>
-        )}
+        ) : null}
 
         {view === "evaluate" && (
           <>
@@ -192,6 +193,7 @@ export default function App() {
         )}
         {view === "registry" && <RegistryPage />}
         {view === "retrain" && <RetrainPage />}
+        {view === "drift" && <DriftPage />}
       </main>
     </div>
   );

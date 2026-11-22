@@ -906,3 +906,30 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   background: var(--surface-inset); border: 1px solid var(--border); border-radius: var(--radius-sm);
   font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
 }
+
+/* ═══════════════════════════════════════════════════════ Drift & anomalies */
+
+.pill-warn { color: var(--risk-high); background: var(--risk-high-bg); border-color: var(--risk-high-border); }
+
+.status-banner {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-3) var(--space-5); margin-bottom: var(--space-4);
+  border-radius: var(--radius-md); border: 1px solid var(--border); border-left-width: 4px;
+  background: var(--surface); font-size: 13px; color: var(--text-secondary);
+}
+.status-banner strong { color: var(--text-primary); font-size: 14px; }
+.status-banner.tone-low      { border-left-color: var(--risk-low);      background: var(--risk-low-bg); }
+.status-banner.tone-medium   { border-left-color: var(--risk-medium);   background: var(--risk-medium-bg); }
+.status-banner.tone-critical { border-left-color: var(--risk-critical); background: var(--risk-critical-bg); }
+
+.chip-row { display: flex; gap: var(--space-2); }
+.chip {
+  padding: 4px 12px; border-radius: var(--radius-xl); cursor: pointer; font-size: 12px; font-weight: 600;
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border);
+}
+.chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.chip.active { background: var(--accent-soft); color: var(--text-primary); border-color: var(--accent); }
+
+.why-cell { white-space: normal !important; min-width: 280px; font-size: 12.5px; }
+.hist-chart { width: 100%; height: auto; max-height: 140px; display: block; }
+.drift-caveat { margin: 0; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); background: var(--risk-medium-bg); color: var(--text-secondary); }

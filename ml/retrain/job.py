@@ -35,7 +35,9 @@ from ml.contest.runner import run_contest
 from ml.contest.selection import select_winner
 from ml.data.daily_batch import DailyStore, DriftConfig, fit_population, simulate_day, warm_up
 from ml.evaluation.cost_model import CostAssumptions
-from ml.features.build_features import build_features
+from ml.features.build_features import FEATURE_COLUMNS, build_features
+from ml.monitoring.anomaly import AnomalyDetector, account_day_table, summarize, to_records
+from ml.monitoring.drift import drift_report
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
 from ml.training.train_baseline import chronological_split
 
@@ -91,6 +93,64 @@ def _log(data_dir: str, entry: dict):
         f.write(json.dumps(_clean(entry)) + "\n")
 
 
+RECENT_DAYS = 14        # trailing window used as the "recent" drift reference
+BASELINE_DAYS = 40      # oldest history used as the slow-creep drift reference
+ANOMALY_REFERENCE_DAYS = 30
+
+
+def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
+    """
+    Drift and account-anomaly checks on the newly generated days. Runs BEFORE promotion so
+    the scores it watches come from the model that was actually serving. Writes the full
+    detail to drift_log.jsonl and one anomalies/day_XXXX.json per day; returns a short summary.
+    """
+    ts = pd.to_datetime(feats["timestamp"])
+    origin = ts.min().normalize()
+    day = (ts.dt.normalize() - origin).dt.days
+    first = min(sim_days)
+
+    cur = feats[day.isin(sim_days)]
+    recent = feats[(day >= first - RECENT_DAYS) & (day < first)]
+    baseline = feats[day < min(BASELINE_DAYS, first)]
+
+    score_ref = score_cur = None
+    champ = registry.champion()
+    if champ is not None:
+        model = registry.load_model(champ["run_id"], champ["model_name"])
+        score_ref = model.predict_proba(recent[FEATURE_COLUMNS])[:, 1]
+        score_cur = model.predict_proba(cur[FEATURE_COLUMNS])[:, 1]
+    drift = drift_report(recent, baseline, cur, score_ref, score_cur)
+
+    table = account_day_table(feats, origin=origin)
+    reference = table[(table["day"] >= first - ANOMALY_REFERENCE_DAYS) & (table["day"] < first)]
+    detector = AnomalyDetector().fit(reference)
+    current = table[table["day"].isin(sim_days)]
+    flags = detector.detect(current)
+    summary = summarize(flags, n_accounts=len(current), reference_rate=detector.reference_rate)
+
+    os.makedirs(os.path.join(data_dir, "anomalies"), exist_ok=True)
+    for d in sim_days:
+        day_flags = flags[flags["day"] == d]
+        day_summary = summarize(day_flags, n_accounts=int((current["day"] == d).sum()),
+                                reference_rate=detector.reference_rate)
+        with open(os.path.join(data_dir, "anomalies", f"day_{d:04d}.json"), "w") as f:
+            json.dump(_clean({"day": d, "job_id": job_id, "summary": day_summary,
+                              "records": to_records(day_flags)}), f)
+
+    finished = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with open(os.path.join(data_dir, "drift_log.jsonl"), "a") as f:
+        f.write(json.dumps(_clean({"job_id": job_id, "at": finished, "sim_days": sim_days,
+                                   "drift": drift, "anomalies": summary})) + "\n")
+
+    return {
+        "drift_status": drift["status"], "max_psi": drift["max_psi"],
+        "flagged_features": [x["feature"] for x in drift["features"] if x["severity"] == "significant"],
+        "score_psi": drift["score"]["psi"] if drift["score"] else None,
+        "accounts_checked": summary["accounts_checked"], "flagged": summary["flagged"],
+        **summary["by_severity"], "rate_vs_expected": summary["rate_vs_expected"],
+    }
+
+
 def run_daily_job(config: RetrainConfig = None) -> dict:
     c = config or RetrainConfig()
     names = list(c.models or CANDIDATES)
@@ -130,6 +190,10 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
             registry = ModelRegistry(c.registry_dir)
             if c.bootstrap:
                 bootstrap_champion(registry)
+            try:
+                monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"])
+            except Exception as e:  # monitoring must never stop retraining; the error is recorded
+                monitoring = {"error": f"{type(e).__name__}: {e}"}
             cost = CostAssumptions()
             entries = run_contest(train, val, test, names=names, cost=cost, seed=c.seed)
             winner = select_winner(entries)
@@ -142,7 +206,7 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
                 total_rows=len(raw_all), fraud_rate_total=float(raw_all["is_fraud"].mean()),
                 split={"train": len(train), "val": len(val), "test": len(test)},
                 run_id=run_id, winner=winner["name"] if winner else None,
-                decision=decision, champion=registry.champion())
+                decision=decision, champion=registry.champion(), monitoring=monitoring)
             return report
         except Exception as e:
             report["error"] = f"{type(e).__name__}: {e}"
@@ -180,6 +244,14 @@ def main(argv=None):
           f"({report['new_fraud_rows']} fraud), total {report['total_rows']:,}")
     print(f"contest winner: {report['winner']}  |  {'PROMOTED' if d['promoted'] else 'kept champion'}: {d['reason']}")
     print(f"serving champion: {report['champion']['model_name']} ({report['champion']['run_id']})")
+    m = report["monitoring"]
+    if "error" in m:
+        print(f"monitoring FAILED: {m['error']}")
+    else:
+        print(f"drift: {m['drift_status']} (max PSI {m['max_psi']:.2f}"
+              f"{', ' + ', '.join(m['flagged_features']) if m['flagged_features'] else ''})  |  "
+              f"accounts flagged: {m['critical']} critical, {m['high']} high, {m['watch']} watch "
+              f"of {m['accounts_checked']:,}")
 
 
 if __name__ == "__main__":

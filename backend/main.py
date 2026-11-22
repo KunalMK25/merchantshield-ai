@@ -26,6 +26,7 @@ from backend.services.audit_service import AuditStore
 from backend.api.routes import router
 from backend.api.registry_routes import router as registry_router
 from backend.api.retrain_routes import router as retrain_router
+from backend.api.monitoring_routes import router as monitoring_router
 from ml.registry.store import ModelRegistry
 from backend.services.model_provider import ModelProvider
 
@@ -97,6 +98,7 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(registry_router)
 app.include_router(retrain_router)
+app.include_router(monitoring_router)
 
 # CORS is only needed when the frontend runs as a separate dev-server process
 # (`npm run dev` on a different port) against this API during development. The
