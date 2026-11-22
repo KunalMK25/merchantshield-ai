@@ -22,6 +22,11 @@ class Workspace:
     data_dir = property(lambda self: self.path / "data_store")
     registry_dir = property(lambda self: self.path / "registry_store")
     config_path = property(lambda self: self.path / "config.json")
+    anomaly_config_path = property(lambda self: self.path / "anomaly_config.json")
+
+    def anomaly_calibration(self):
+        """The saved detector calibration (see ml.datasets.calibrate), or None if never calibrated."""
+        return json.loads(self.anomaly_config_path.read_text()) if self.anomaly_config_path.exists() else None
 
     def exists(self) -> bool:
         return self.raw_path.exists() and self.config_path.exists()

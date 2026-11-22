@@ -37,7 +37,7 @@ from ml.contest.selection import select_winner
 from ml.data.daily_batch import DailyStore, DriftConfig, fit_population, simulate_day, warm_up
 from ml.evaluation.cost_model import CostAssumptions
 from ml.features.build_features import FEATURE_COLUMNS, build_features
-from ml.monitoring.anomaly import AnomalyDetector, account_day_table, summarize, to_records
+from ml.monitoring.anomaly import AnomalyConfig, AnomalyDetector, account_day_table, summarize, to_records
 from ml.monitoring.drift import drift_report
 from ml.datasets.workspace import Workspace
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
@@ -65,12 +65,15 @@ class RetrainConfig:
     bootstrap: bool = True             # seed the registry with the original lgbm_v1 champion
     stream_path: Optional[str] = None  # held-back real days to replay (a prepared dataset workspace)
     cost: CostAssumptions = field(default_factory=CostAssumptions)
+    anomaly: Optional[AnomalyConfig] = None    # calibrated detector thresholds for a dataset workspace
 
     @classmethod
     def from_workspace(cls, ws: Workspace, **overrides):
         """Run the lifecycle on a prepared public dataset, with its own registry, logs and cost scale."""
         meta = ws.config()
+        cal = ws.anomaly_calibration()
         fields = dict(
+            anomaly=AnomalyConfig(quantile=cal["quantile"], iso_quantile=cal["iso_quantile"]) if cal else None,
             base_raw_path=str(ws.raw_path), data_dir=str(ws.data_dir), registry_dir=str(ws.registry_dir),
             stream_path=str(ws.stream_path) if ws.stream_path.exists() else None,
             cost=CostAssumptions(fp_cost=meta["fp_cost"], fn_cost_fraction=meta["fn_cost_fraction"]),
@@ -114,7 +117,7 @@ BASELINE_DAYS = 40      # oldest history used as the slow-creep drift reference
 ANOMALY_REFERENCE_DAYS = 30
 
 
-def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
+def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None) -> dict:
     """
     Drift and account-anomaly checks on the newly generated days. Runs BEFORE promotion so
     the scores it watches come from the model that was actually serving. Writes the full
@@ -139,7 +142,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
 
     table = account_day_table(feats, origin=origin)
     reference = table[(table["day"] >= first - ANOMALY_REFERENCE_DAYS) & (table["day"] < first)]
-    detector = AnomalyDetector().fit(reference)
+    detector = AnomalyDetector(config=anomaly_config).fit(reference)
     current = table[table["day"].isin(sim_days)]
     flags = detector.detect(current)
     summary = summarize(flags, n_accounts=len(current), reference_rate=detector.reference_rate)
@@ -168,6 +171,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
 
     return {
         "alerts_created": alerts_created, "alerts_error": alerts_error,
+        "anomaly_quantile": anomaly_config.quantile if anomaly_config else None,
         "drift_status": drift["status"], "max_psi": drift["max_psi"],
         "flagged_features": drift["flagged_features"],
         "score_psi": drift["score"]["psi"] if drift["score"] else None,
@@ -240,7 +244,7 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
             if c.bootstrap:
                 bootstrap_champion(registry)
             try:
-                monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"])
+                monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"], c.anomaly)
             except Exception as e:  # monitoring must never stop retraining; the error is recorded
                 monitoring = {"error": f"{type(e).__name__}: {e}"}
             cost = c.cost

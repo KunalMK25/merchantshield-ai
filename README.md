@@ -497,6 +497,10 @@ customer, and when the whole population shifts at once many ordinary accounts cr
 thresholds (an injected spending shift raised flags from about 10 to 214), which the page warns about.
 Flags are recommendations for a person to review. Nothing here holds, blocks or closes an account.
 
+The thresholds above are the synthetic-data defaults. For a real dataset they can be recalibrated on that
+dataset's validation days (see [Real public datasets](#real-public-datasets)); on Sparkov this gave only a modest
+improvement, so do not assume the detector's synthetic numbers carry over.
+
 ```bash
 python -m ml.retrain.job --drift amount_scale=2.5   # inject a spending shift and watch it get caught
 python -m ml.retrain.job --drift fraud_rate_multiplier=40   # inject a fraud surge
@@ -547,6 +551,7 @@ evaluated or run through the daily job.
 python -m ml.datasets.catalog                                   # what is available, where, and how to get it
 kaggle datasets download -d kartik2112/fraud-detection -p data/raw/sparkov --unzip
 python -m ml.datasets.prepare sparkov --path data/raw/sparkov   # validate, profile, split, write a workspace
+python -m ml.datasets.calibrate sparkov                         # tune the account detector on validation days only
 python -m ml.datasets.evaluate sparkov                          # contest + account detector on the real labels
 python -m ml.retrain.job --workspace sparkov                    # replay the next real day, retrain, monitor
 ```
@@ -600,11 +605,41 @@ cost is an assumed $3.80 (8% of the median amount); costs are in dollars.
 - Precision is about 10% to 13% at the operating point (recall 85% to 87%), far below the synthetic data's
   78%. Two things drive that: the base rate is only 0.27% in the test window, and this dataset has no device
   data, so `new_device_flag` carries no signal. The ROC-AUC of about 0.985 shows the ranking is strong.
-- **The account anomaly detector does not transfer.** On these 57,976 account-days (133 compromised) it
-  flags 351 as critical at 13% precision and 35% recall, and 5,264 in total at 2% precision. Its signals and
-  thresholds were tuned on the synthetic generator's fraud patterns; on real labels the supervised models are
-  clearly better. It would need recalibrating on this data before it deserves trust here.
+- **The account anomaly detector does not transfer well, and recalibrating only helped a little** (next
+  section).
 - This is one run, with an assumed cost scale, on a simulated (Sparkov-generated) dataset, not real bank data.
+
+### Recalibrating the account detector
+
+The detector's thresholds were hand-tuned on synthetic data. On Sparkov they were far too loose: a "largest
+payment 4x the usual" signal fired on 3,838 ordinary account-days in the validation window, because real
+spending is heavy-tailed, even though the underlying quantities rank fraud well (total daily spend has a
+validation ROC-AUC of 0.97).
+
+`python -m ml.datasets.calibrate sparkov` fixes the *method*, not just the numbers. The detector takes a config;
+with a quantile set, the three ratio thresholds come from that quantile of the dataset's own reference days,
+and the quantile and the forest's flag threshold are chosen from a 15-setting grid on **validation days only**.
+Guarantees, each covered by a test: the test window is never read (flipping every test-day label leaves the
+calibration byte-identical), and `evaluate` refuses a test window that overlaps the days used for tuning. The
+daily job picks the calibration up automatically for that dataset.
+
+One honest disclosure: the first objective (F1 of the critical+high tier) picked a setting whose critical tier,
+the one that recommends a hold, was weak, so I changed it to the mean F1 of both tiers. That change was made
+from validation numbers alone, before the test days were scored with the calibrated detector.
+
+Result on the sealed test window (133 compromised account-days among 57,976):
+
+| Detector | Critical tier | Critical + high | Everything flagged |
+|---|---|---|---|
+| Default thresholds | 13% precision, 35% recall | 12%, 72% | 2%, 92% (5,264 flagged) |
+| Calibrated (quantile 0.99) | 13% precision, 44% recall | 11%, 65% | 4%, 79% (2,584 flagged) |
+
+Validation had suggested 30% precision for the critical tier; the test window gave 13%. So calibration helped
+recall in the critical tier and halved the volume of flags, but it did **not** fix precision, and what looked
+like a big gain on validation did not hold. Likely causes, not verified: only 179 compromised validation
+account-days, a flat score landscape (several settings tied), and a lower fraud rate in the test window
+(0.23% against 0.32%). The supervised models, which see each transaction, are clearly the better detector on
+this data; the account-level signals are best read as a weak supplement here.
 
 Downloading on a network that inspects HTTPS (a corporate gateway) fails with `CERTIFICATE_VERIFY_FAILED`
 because Python does not trust the gateway's certificate. If you accept routing your Kaggle login through that
@@ -825,10 +860,11 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_drift.py`, `test_anomaly.py`, `test_monitoring_job.py`, `test_monitoring_api.py` | Drift statistics, anomaly detector, job integration, API |
 | `test_cases_store.py`, `test_cases_api.py`, `test_cases_ingest.py` | Alert queue rules, analyst guard, ingestion |
 | `test_datasets.py`, `test_dataset_workspace.py`, `test_dataset_evaluate.py` | Loaders for each dataset layout, validation and fit rating, prepare, real-day replay, evaluation |
+| `test_anomaly_calibration.py`, `test_dataset_calibration.py` | Config-driven detector, quantile thresholds, validation-only tuning, test-label immunity, overlap guard |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 435 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 450 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
@@ -850,6 +886,8 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   demo data, and the anomaly detector's precision and recall measure that generator's fraud patterns, not
   real fraud. Loaders for public datasets exist (see [Real public datasets](#real-public-datasets)) but
   have not been run against the real downloads.
+- **The account detector is weak on real data.** On Sparkov, even after calibration, its critical tier is about
+  13% precise on unseen days. The supervised models are far better there.
 - **Champion churn.** Promotion compares models on a validation window that moves every day, so the
   champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
 - **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if

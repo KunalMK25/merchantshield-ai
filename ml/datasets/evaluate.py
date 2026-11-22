@@ -19,7 +19,7 @@ from ml.contest.selection import select_winner
 from ml.datasets.schema import profile
 from ml.datasets.workspace import DEFAULT_ROOT, Workspace
 from ml.features.build_features import build_features
-from ml.monitoring.anomaly import SEVERITIES, AnomalyDetector, account_day_table
+from ml.monitoring.anomaly import SEVERITIES, AnomalyConfig, AnomalyDetector, account_day_table
 from ml.registry.store import _clean
 from ml.retrain.job import RetrainConfig, rolling_split
 
@@ -31,16 +31,15 @@ def _tier(flags, truth, sel):
             "recall": len(hits) / len(truth) if truth else None}
 
 
-def _anomaly(feats, test_start_day):
-    table = account_day_table(feats)
+def _anomaly(table, test_start_day, config, label):
     reference, current = table[table["day"] < test_start_day], table[table["day"] >= test_start_day]
     try:
-        detector = AnomalyDetector().fit(reference)
+        detector = AnomalyDetector(config=config).fit(reference)
     except ValueError as e:
-        return {"error": str(e)}
+        return {"config": label, "error": str(e)}
     flags = detector.detect(current)
     truth = set(map(tuple, current.loc[current["fraud"] == 1, ["customer_id", "day"]].to_numpy()))
-    return {"accounts_checked": int(len(current)), "compromised_account_days": len(truth),
+    return {"config": label, "accounts_checked": int(len(current)), "compromised_account_days": len(truth),
             "tiers": {"critical": _tier(flags, truth, ["critical"]),
                       "critical_plus_high": _tier(flags, truth, ["critical", "high"]),
                       "everything_flagged": _tier(flags, truth, list(SEVERITIES))}}
@@ -55,13 +54,20 @@ def evaluate_workspace(ws: Workspace, models=None, val_days=None, test_days=None
 
     default = max(3, prof["days"] // 10)
     val_days, test_days = val_days or default, test_days or default
+
+    calibration = ws.anomaly_calibration()
+    if calibration and prof["days"] - test_days < calibration["test_start"]:
+        raise ValueError(
+            f"The test window starts at day {prof['days'] - test_days}, but the detector was calibrated on days up to "
+            f"{calibration['test_start'] - 1}. Those windows overlap, so the test score would not be honest. Use a test "
+            f"window of at most {prof['days'] - calibration['test_start']} days, or recalibrate with the same --test-days.")
     feats = build_features(raw)
     train, val, test = rolling_split(feats, val_days, test_days)
     entries = run_contest(train, val, test, names=cfg.models, cost=cfg.cost, seed=cfg.seed)
     winner = select_winner(entries)
 
-    ts = pd.to_datetime(feats["timestamp"])
-    test_start = int((ts.dt.normalize() - ts.min().normalize()).dt.days.max()) + 1 - test_days
+    test_start = prof["days"] - test_days
+    table = account_day_table(feats)
     meta = json.loads(ws.config_path.read_text())
     report = {
         "dataset": meta["dataset"], "title": meta["title"], "fit": prof["fit"], "fit_reason": prof["fit_reason"],
@@ -73,8 +79,16 @@ def evaluate_workspace(ws: Workspace, models=None, val_days=None, test_days=None
         "contest": [{"name": e["name"], "tree_based": e["tree_based"], "val": e["val"], "test": e["test"],
                      "train_seconds": e["train_seconds"]} for e in entries],
         "winner": winner["name"] if winner else None,
-        "anomaly": _anomaly(feats, test_start),
     }
+    default_anomaly = _anomaly(table, test_start, AnomalyConfig(), "default")
+    if calibration:
+        cfg = AnomalyConfig(quantile=calibration["quantile"], iso_quantile=calibration["iso_quantile"])
+        report["anomaly"] = _anomaly(table, test_start, cfg, "calibrated")
+        report["anomaly_default"] = default_anomaly
+        report["calibration"] = {k: calibration[k] for k in
+                                 ("quantile", "iso_quantile", "score", "objective", "calibrated_on", "validation_compromised")}
+    else:
+        report["anomaly"] = default_anomaly
     (ws.path / "evaluation.json").write_text(json.dumps(_clean(report), indent=2))
     return report
 
@@ -94,7 +108,7 @@ def main(argv=None):
     ws = Workspace(a.dataset, a.workspace_root)
     try:
         r = evaluate_workspace(ws, a.models, a.val_days, a.test_days)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         print(f"error: {e}")
         raise SystemExit(2)
 
@@ -109,14 +123,21 @@ def main(argv=None):
         star = " *" if m["name"] == r["winner"] else ""
         print(f"{m['name']:22s}{m['val']['threshold']:>5.2f}{m['test']['precision']:>11.1%}"
               f"{m['test']['recall']:>8.1%}{m['test']['cost']:>14,.0f}{star}")
-    an = r["anomaly"]
-    if "error" in an:
-        print(f"\nAccount detector: not run ({an['error']})")
-    else:
-        print(f"\nAccount detector on the last {r['test_days']} days ({an['compromised_account_days']} compromised account-days "
-              f"among {an['accounts_checked']:,}):")
+    for key, title in (("anomaly_default", "default thresholds"), ("anomaly", None)):
+        an = r.get(key)
+        if an is None:
+            continue
+        title = title or ("calibrated thresholds" if an["config"] == "calibrated" else "default thresholds")
+        if "error" in an:
+            print(f"\nAccount detector ({title}): not run ({an['error']})")
+            continue
+        print(f"\nAccount detector, {title}, on the last {r['test_days']} days ({an['compromised_account_days']} compromised "
+              f"account-days among {an['accounts_checked']:,}):")
         for name, t in an["tiers"].items():
             print(f"  {name:20s} flagged {t['flagged']:>5}  precision {_pct(t['precision']):>5}  recall {_pct(t['recall']):>5}")
+    if "calibration" in r:
+        print(f"  (calibrated on {r['calibration']['calibrated_on']}: quantile {r['calibration']['quantile']}, "
+              f"forest quantile {r['calibration']['iso_quantile']})")
     print(f"\nSaved {ws.path / 'evaluation.json'}")
 
 
