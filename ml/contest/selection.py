@@ -28,6 +28,9 @@ def evaluate_at(y_true, y_prob, amounts, cost: CostAssumptions, threshold: float
         pr_auc = float(average_precision_score(y_true, y_prob))
     except ValueError:
         roc_auc = pr_auc = None
+    # a window with a single class makes these undefined (NaN); report None so saved JSON stays valid
+    roc_auc = roc_auc if roc_auc is not None and np.isfinite(roc_auc) else None
+    pr_auc = pr_auc if pr_auc is not None and np.isfinite(pr_auc) else None
     return {
         "threshold": float(threshold),
         "precision": float(precision), "recall": float(recall), "f1": float(f1),

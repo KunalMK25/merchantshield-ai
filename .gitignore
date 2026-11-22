@@ -46,3 +46,7 @@ ml/registry_store/
 
 # generated daily batches and retrain log
 ml/data_store/
+
+# raw dataset downloads (never commit these) and prepared dataset workspaces
+data/
+ml/workspaces/

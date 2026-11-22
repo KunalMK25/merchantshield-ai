@@ -24,7 +24,7 @@ import os
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import pandas as pd
@@ -39,6 +39,7 @@ from ml.evaluation.cost_model import CostAssumptions
 from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import AnomalyDetector, account_day_table, summarize, to_records
 from ml.monitoring.drift import drift_report
+from ml.datasets.workspace import Workspace
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
 from ml.training.train_baseline import chronological_split
 
@@ -62,6 +63,20 @@ class RetrainConfig:
     seed: int = 42
     drift: Optional[DriftConfig] = None
     bootstrap: bool = True             # seed the registry with the original lgbm_v1 champion
+    stream_path: Optional[str] = None  # held-back real days to replay (a prepared dataset workspace)
+    cost: CostAssumptions = field(default_factory=CostAssumptions)
+
+    @classmethod
+    def from_workspace(cls, ws: Workspace, **overrides):
+        """Run the lifecycle on a prepared public dataset, with its own registry, logs and cost scale."""
+        meta = ws.config()
+        fields = dict(
+            base_raw_path=str(ws.raw_path), data_dir=str(ws.data_dir), registry_dir=str(ws.registry_dir),
+            stream_path=str(ws.stream_path) if ws.stream_path.exists() else None,
+            cost=CostAssumptions(fp_cost=meta["fp_cost"], fn_cost_fraction=meta["fn_cost_fraction"]),
+            bootstrap=False)
+        fields.update(overrides)
+        return cls(**fields)
 
 
 def rolling_split(feats: pd.DataFrame, val_days: int, test_days: int):
@@ -154,11 +169,23 @@ def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
     return {
         "alerts_created": alerts_created, "alerts_error": alerts_error,
         "drift_status": drift["status"], "max_psi": drift["max_psi"],
-        "flagged_features": [x["feature"] for x in drift["features"] if x["severity"] == "significant"],
+        "flagged_features": drift["flagged_features"],
         "score_psi": drift["score"]["psi"] if drift["score"] else None,
         "accounts_checked": summary["accounts_checked"], "flagged": summary["flagged"],
         **summary["by_severity"], "rate_vs_expected": summary["rate_vs_expected"],
     }
+
+
+def _load_stream(path, day0):
+    """Held-back real days with a day index relative to the history's first day, or None."""
+    if not path or not os.path.exists(path):
+        return None
+    stream = pd.read_csv(path)
+    if stream.empty:
+        return None
+    stream["timestamp"] = pd.to_datetime(stream["timestamp"])
+    stream["_day"] = (stream["timestamp"].dt.normalize() - pd.Timestamp(day0)).dt.days
+    return stream
 
 
 def run_daily_job(config: RetrainConfig = None) -> dict:
@@ -177,17 +204,29 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
         try:
             base = pd.read_csv(c.base_raw_path)
             base["timestamp"] = pd.to_datetime(base["timestamp"])
-            profiles, merchants = fit_population(base)
-
             store = DailyStore(c.data_dir)
             state = store.state(base)
-            if not store.has_state():
-                state = warm_up(profiles, merchants, state, seed=c.seed)
+            stream = _load_stream(c.stream_path, state["day0"])
+            synth = None            # fitted lazily: a run that only replays real days never needs it
 
-            new_frames, sim_days = [], []
+            new_frames, sim_days, sources = [], [], []
             for _ in range(c.days):
-                day = state["next_day"]
-                df, state = simulate_day(profiles, merchants, day, state, drift=drift, seed=c.seed)
+                later = stream[stream["_day"] >= state["next_day"]] if stream is not None else None
+                if later is not None and len(later):
+                    day = int(later["_day"].min())                    # real data: skip days with no transactions
+                    df = later[later["_day"] == day].drop(columns="_day").reset_index(drop=True)
+                    ids = df["transaction_id"].str.extract(r"_(\d+)$")[0].astype(int)
+                    state = {**state, "next_day": day + 1, "txn_counter": max(state["txn_counter"], int(ids.max()))}
+                    sources.append("replay")
+                else:
+                    if synth is None:
+                        profiles, merchants = fit_population(base)
+                        synth = (profiles, merchants)
+                        if not store.has_state():
+                            state = warm_up(profiles, merchants, state, seed=c.seed)
+                    day = state["next_day"]
+                    df, state = simulate_day(synth[0], synth[1], day, state, drift=drift, seed=c.seed)
+                    sources.append("synthetic")
                 store.append_day(day, df, state)
                 new_frames.append(df)
                 sim_days.append(day)
@@ -204,7 +243,7 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
                 monitoring = _monitor(feats, sim_days, registry, c.data_dir, report["job_id"])
             except Exception as e:  # monitoring must never stop retraining; the error is recorded
                 monitoring = {"error": f"{type(e).__name__}: {e}"}
-            cost = CostAssumptions()
+            cost = c.cost
             entries = run_contest(train, val, test, names=names, cost=cost, seed=c.seed)
             winner = select_winner(entries)
             run_id = registry.register_run(
@@ -212,7 +251,8 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
             decision = maybe_promote(registry, run_id, val, cost, margin=c.margin)
 
             report.update(
-                status="ok", sim_days=sim_days, new_rows=len(new), new_fraud_rows=int(new["is_fraud"].sum()),
+                status="ok", sim_days=sim_days, new_rows=len(new), cost=asdict(cost),
+                source=sources[0] if len(set(sources)) == 1 else "mixed", new_fraud_rows=int(new["is_fraud"].sum()),
                 total_rows=len(raw_all), fraud_rate_total=float(raw_all["is_fraud"].mean()),
                 split={"train": len(train), "val": len(val), "test": len(test)},
                 run_id=run_id, winner=winner["name"] if winner else None,
@@ -237,6 +277,8 @@ def _parse_drift(pairs):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--workspace", help="run on a prepared dataset workspace (see ml.datasets.prepare)")
+    ap.add_argument("--workspace-root", default=None)
     ap.add_argument("--days", type=int, default=1)
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--margin", type=float, default=0.03)
@@ -244,13 +286,18 @@ def main(argv=None):
                     help="amount_scale, fraud_rate_multiplier, new_device_multiplier")
     args = ap.parse_args(argv)
     try:
-        report = run_daily_job(RetrainConfig(days=args.days, models=args.models, margin=args.margin,
-                                             drift=_parse_drift(args.drift)))
+        opts = dict(days=args.days, models=args.models, margin=args.margin, drift=_parse_drift(args.drift))
+        if args.workspace:
+            kw = {"root": args.workspace_root} if args.workspace_root else {}
+            config = RetrainConfig.from_workspace(Workspace(args.workspace, **kw), **opts)
+        else:
+            config = RetrainConfig(**opts)
+        report = run_daily_job(config)
     except JobAlreadyRunning as e:
         print(e)
         raise SystemExit(75)  # EX_TEMPFAIL: cron can simply try again next time
     d = report["decision"]
-    print(f"day(s) {report['sim_days']}: +{report['new_rows']:,} rows "
+    print(f"day(s) {report['sim_days']} [{report['source']}]: +{report['new_rows']:,} rows "
           f"({report['new_fraud_rows']} fraud), total {report['total_rows']:,}")
     print(f"contest winner: {report['winner']}  |  {'PROMOTED' if d['promoted'] else 'kept champion'}: {d['reason']}")
     print(f"serving champion: {report['champion']['model_name']} ({report['champion']['run_id']})")

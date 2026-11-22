@@ -57,6 +57,7 @@ attributed to the amount features) and **Alerts** (review a flagged account and 
 [Decision engine](#decision-engine) · [Explainability](#explainability) ·
 [External validation](#external-validation--ieee-cis) ·
 [Model contest](#model-contest-and-registry) · [Daily retraining](#daily-retraining) ·
+[Public datasets](#real-public-datasets) ·
 [Drift and anomalies](#drift-and-anomaly-monitoring) · [Alerts and holds](#alerts-and-account-holds) ·
 [Audit trail](#audit-trail) · [API](#api) · [Frontend](#frontend--dashboard) ·
 [Screenshots](#screenshots) · [Project structure](#project-structure) ·
@@ -469,8 +470,9 @@ Every retraining cycle also checks the new day for two different problems. Resul
 the Population Stability Index (below 0.10 stable, 0.10 to 0.25 watch, above 0.25 drift), with the
 KS statistic alongside. The serving model's score distribution is monitored too, because shifts spread
 thinly over many features appear there first. Two choices came from measuring the data: counts that
-grow as history accumulates (`prior_txn_count`, `account_age_days`) are compared with the recent
-window only, and weekday is not monitored (a one-day window has a single weekday). A normal day
+grow every day by construction (`prior_txn_count`, `account_age_days`) are shown for information but never
+judged (in a dense history today's values always sit above the trailing window, a false alarm every day),
+and weekday is not monitored (a one-day window has a single weekday). A normal day
 stays under PSI 0.07 on every feature; an injected 2.5x spending shift reads 3.2 and is attributed to
 the amount features.
 
@@ -533,6 +535,62 @@ python -m ml.cases.ingest            # queue flags from days that ran before the
 started with `MS_ANALYST_TOKEN=...`, a matching `X-Analyst-Token` header (the Alerts page has a field for
 it). Without that variable anyone who can reach the API can act, so set it before exposing this anywhere.
 Everything is simulated: there is no real account or customer behind a customer id.
+
+## Real public datasets
+
+The system can run its whole lifecycle on public transaction datasets instead of the synthetic one. A
+dataset is **downloaded by you** (the Kaggle ones need your own login, and unofficial mirrors cannot be
+verified as unmodified, so nothing here fetches them), prepared into an isolated *workspace*, then
+evaluated or run through the daily job.
+
+```bash
+python -m ml.datasets.catalog                                   # what is available, where, and how to get it
+kaggle datasets download -d kartik2112/fraud-detection -p data/raw/sparkov --unzip
+python -m ml.datasets.prepare sparkov --path data/raw/sparkov   # validate, profile, split, write a workspace
+python -m ml.datasets.evaluate sparkov                          # contest + account detector on the real labels
+python -m ml.retrain.job --workspace sparkov                    # replay the next real day, retrain, monitor
+```
+
+| Dataset | Fit | Why |
+|---|---|---|
+| **Sparkov** (simulated cards, 2019-20) | Good | About 1,000 cards with long histories and a fraud label. No device data. |
+| **IBM TabFormer** (simulated cards) | Good | 2,000 users, years of history, real payment errors. 24 million rows: sample with `--max-customers`. |
+| **IEEE-CIS** (Vesta e-commerce) | Partial | Real chargebacks, but customer identity is a card proxy, so several features are degraded (the IEEE adapter documents which). |
+| **PaySim** (mobile money) | Poor | Nearly every origin account appears once, so there is no customer history. `prepare` refuses it unless `--force`. |
+| **Bank Account Fraud** | Not integrated | It is account-opening fraud with no customer, timestamp or amount, so there is nothing for the behavioural features to use. |
+| **ULB credit-card** | Not integrated | Anonymised PCA columns and no customer or card identifier. |
+
+The fit rating is computed from the data (the share of rows whose customer has enough earlier
+transactions), not assumed, and `prepare` lists the features a dataset leaves inert. Every loader maps
+into the same raw schema, ignores personal columns (names, addresses, dates of birth), and records its
+assumptions in `notes.json`.
+
+**What a workspace holds** (`ml/workspaces/<name>/`, git-ignored): the history the models learn from, the
+final days held back as a replay stream, cost assumptions scaled to the dataset (the false-positive cost
+is 8% of the median amount, the same ratio as the original study), and its own registry and logs.
+The daily job replays the held-back days one at a time, so "new" data is real data with real labels;
+once they run out it continues with synthetic days fitted to the history.
+
+To see the dashboard for a dataset, point the API at its workspace:
+
+```bash
+MS_REGISTRY_DIR=ml/workspaces/sparkov/registry_store MS_DATA_STORE_DIR=ml/workspaces/sparkov/data_store \
+  python -m uvicorn backend.main:app --port 8000
+python -m ml.cases.ingest --data-dir ml/workspaces/sparkov/data_store      # queue its flagged accounts
+```
+
+**Status, stated plainly.** The loaders are tested against small files written in each dataset's published
+column layout. They have **not** been run against the real downloads, which need a login this project does
+not use; if a real file differs, the loader names the missing column. Beyond that:
+
+- Datasets with no device or region data leave `new_device_flag` / `new_geo_flag` inert, so the models rely
+  on amounts, timing, velocity and (where present) payment errors. Expect lower scores than on the
+  synthetic data, whose fraud was built to show up in those features.
+- Sparkov and TabFormer amounts are USD while the decision policy's large-amount cutoff is in rupees, so
+  serving a dataset-trained champion through `/risk/*` uses a mismatched cutoff. Treat workspace models as
+  offline experiments.
+- Once the replay stream is used up, the synthetic fallback injects the *generator's* fraud patterns, not
+  the dataset's.
 
 ## Audit trail
 
@@ -617,6 +675,7 @@ merchantshield-ai/
 │   ├── retrain/          # Daily job and in-app scheduler
 │   ├── monitoring/       # Drift (PSI / KS) and account anomaly detection
 │   ├── cases/            # Alert queue, simulated holds, notices, audit trail (SQLite)
+│   ├── datasets/         # Public-dataset loaders, catalogue, validation/profile, prepare, evaluate, workspaces
 │   ├── models/           # Frozen lgbm_v1 artifacts + metadata (committed)
 │   └── external/ieee/    # External validation on IEEE-CIS (adapter, experiments, held-out evaluation)
 ├── frontend/             # React/Vite dashboard
@@ -633,7 +692,7 @@ merchantshield-ai/
 ```
 
 Generated at runtime and git-ignored: `ml/data/*.csv`, `ml/data_store/` (daily batches, logs, alert queue),
-`ml/registry_store/` (model registry), `backend/data/` (audit database), `.venv/`.
+`ml/registry_store/` (model registry), `ml/workspaces/` (prepared datasets), `data/` (raw downloads), `backend/data/` (audit database), `.venv/`.
 
 ## Local setup & running the project
 
@@ -730,10 +789,11 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_daily_batch.py`, `test_retrain_job.py`, `test_retrain_scheduler.py` | Daily generator, retraining job, scheduler, status API |
 | `test_drift.py`, `test_anomaly.py`, `test_monitoring_job.py`, `test_monitoring_api.py` | Drift statistics, anomaly detector, job integration, API |
 | `test_cases_store.py`, `test_cases_api.py`, `test_cases_ingest.py` | Alert queue rules, analyst guard, ingestion |
+| `test_datasets.py`, `test_dataset_workspace.py`, `test_dataset_evaluate.py` | Loaders for each dataset layout, validation and fit rating, prepare, real-day replay, evaluation |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 399 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 435 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
@@ -753,7 +813,8 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   US e-commerce). Not UPI, not POS, not Indian merchant transactions.
 - **Monitoring and retraining results are synthetic.** The daily data comes from a generator fitted to the
   demo data, and the anomaly detector's precision and recall measure that generator's fraud patterns, not
-  real fraud. More public datasets (PaySim, Bank Account Fraud, Sparkov) are planned but not integrated.
+  real fraud. Loaders for public datasets exist (see [Real public datasets](#real-public-datasets)) but
+  have not been run against the real downloads.
 - **Champion churn.** Promotion compares models on a validation window that moves every day, so the
   champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
 - **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if

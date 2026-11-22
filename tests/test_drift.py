@@ -81,7 +81,23 @@ def test_report_marks_only_the_shifted_feature():
 def test_report_is_stable_when_nothing_changed():
     rep = drift_report(frame(8000, 1), frame(8000, 2), frame(2000, 3))
     assert rep["status"] == "stable"
-    assert all(f["severity"] == "stable" for f in rep["features"])
+    assert all(f["severity"] in ("stable", "informational") for f in rep["features"])
+
+
+def test_features_that_grow_with_time_never_trigger_drift_on_their_own():
+    """Cumulative counts sit above the trailing window every day in a dense history: a false alarm, not drift."""
+    recent, base, cur = frame(6000, 1), frame(6000, 2), frame(2000, 3)
+    rng = np.random.default_rng(5)
+    recent["prior_txn_count"] = rng.uniform(100, 200, 6000)
+    cur["prior_txn_count"] = rng.uniform(200, 260, 2000)           # entirely above the recent range
+    recent["account_age_days"] = rng.uniform(100, 200, 6000)
+    cur["account_age_days"] = rng.uniform(200, 260, 2000)
+    rep = drift_report(recent, base, cur)
+    by = {f["feature"]: f for f in rep["features"]}
+    for name in MATURING_FEATURES:
+        assert by[name]["psi_recent"] > 1.0              # the shift is real and is still shown...
+        assert by[name]["severity"] == "informational"   # ...but it is not judged
+    assert rep["status"] == "stable" and rep["max_psi"] < 0.1 and rep["flagged_features"] == []
 
 
 def test_maturing_features_are_only_compared_with_the_recent_window():
@@ -91,7 +107,7 @@ def test_maturing_features_are_only_compared_with_the_recent_window():
     rep = drift_report(recent, base, cur)
     by = {f["feature"]: f for f in rep["features"]}
     for name in MATURING_FEATURES:
-        assert by[name]["psi_baseline"] is None and by[name]["severity"] == "stable"
+        assert by[name]["psi_baseline"] is None and by[name]["severity"] == "informational"
     assert rep["status"] == "stable"
 
 

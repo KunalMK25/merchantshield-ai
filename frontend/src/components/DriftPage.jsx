@@ -11,7 +11,7 @@ const STATUS = {
   drifted: { label: "Drift detected", tone: "critical", text: "The data has shifted enough to matter." },
   insufficient_data: { label: "Not enough data", tone: "medium", text: "Too few transactions to judge." },
 };
-const SEV_PILL = { significant: "pill-bad", moderate: "pill-warn", stable: "pill-muted" };
+const SEV_PILL = { significant: "pill-bad", moderate: "pill-warn", stable: "pill-muted", informational: "pill-muted" };
 const ACCOUNT_PILL = { critical: "pill-bad", high: "pill-warn", watch: "pill-muted" };
 const FILTERS = [
   { id: "serious", label: "Critical + high", sev: ["critical", "high"] },
@@ -210,7 +210,7 @@ export default function DriftPage() {
                 </table>
                 <p className="context-note" style={{ marginTop: 12 }}>
                   Counts like <span className="mono">prior_txn_count</span> and <span className="mono">account_age_days</span> grow
-                  naturally, so they are only compared with the recent window. Weekday is not monitored.
+                  every day by construction, so they are shown for information and never judged. Weekday is not monitored.
                 </p>
               </div>
             </section>

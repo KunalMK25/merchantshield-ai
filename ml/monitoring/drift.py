@@ -11,8 +11,10 @@ Kolmogorov-Smirnov statistic is reported alongside as supporting evidence; it is
 used for severity because with thousands of rows it flags changes too small to matter.
 
 Choices that come from measuring the data rather than from convention:
-  * `prior_txn_count` and `account_age_days` grow as history accumulates, so against the
-    baseline they would always look "drifted". They are compared with the recent window only.
+  * `prior_txn_count` and `account_age_days` grow every day by construction. In a dense history
+    today's values always sit above the trailing window's range, so judging them raises a false
+    alarm daily (found when replaying a long real-style dataset). They are reported for information,
+    marked "informational", and never counted in the verdict.
   * `day_of_week` is excluded: a one-day window has a single weekday, which reads as
     enormous drift every day.
   * The model's own score distribution is monitored too, because shifts that are spread
@@ -66,6 +68,9 @@ def ks_test(reference, current) -> dict:
     return {"statistic": float(res.statistic), "p_value": float(res.pvalue)}
 
 
+INFORMATIONAL = "informational"
+
+
 def severity(value: float) -> str:
     if value >= PSI_SIGNIFICANT:
         return "significant"
@@ -76,9 +81,12 @@ def severity(value: float) -> str:
 
 def _feature_row(name, recent, baseline, current):
     psi_recent = psi(recent[name], current[name])
-    psi_base = None if name in MATURING_FEATURES else psi(baseline[name], current[name])
-    worst = max(psi_recent, psi_base if psi_base is not None else 0.0)
     ks = ks_test(recent[name], current[name])
+    if name in MATURING_FEATURES:
+        return {"feature": name, "psi": psi_recent, "psi_recent": psi_recent, "psi_baseline": None,
+                "ks_statistic": ks["statistic"], "ks_p_value": ks["p_value"], "severity": INFORMATIONAL}
+    psi_base = psi(baseline[name], current[name])
+    worst = max(psi_recent, psi_base)
     return {"feature": name, "psi": worst, "psi_recent": psi_recent, "psi_baseline": psi_base,
             "ks_statistic": ks["statistic"], "ks_p_value": ks["p_value"], "severity": severity(worst)}
 
@@ -92,7 +100,7 @@ def drift_report(recent_reference, baseline_reference, current, score_reference=
     report = {
         "status": "stable", "max_psi": 0.0, "n_reference": n_ref, "n_current": n_cur,
         "thresholds": {"moderate": PSI_MODERATE, "significant": PSI_SIGNIFICANT},
-        "features": [], "score": None,
+        "features": [], "score": None, "flagged_features": [],
     }
     if n_cur < MIN_CURRENT_ROWS or n_ref < MIN_REFERENCE_ROWS:
         report["status"] = "insufficient_data"
@@ -100,8 +108,10 @@ def drift_report(recent_reference, baseline_reference, current, score_reference=
 
     report["features"] = [_feature_row(f, recent_reference, baseline_reference, current)
                           for f in DRIFT_FEATURES]
-    severities = [f["severity"] for f in report["features"]]
-    max_psi = max(f["psi"] for f in report["features"])
+    judged = [f for f in report["features"] if f["severity"] != INFORMATIONAL]
+    severities = [f["severity"] for f in judged]
+    max_psi = max(f["psi"] for f in judged)
+    report["flagged_features"] = [f["feature"] for f in judged if f["severity"] == "significant"]
 
     if score_reference is not None and score_current is not None:
         s = psi(score_reference, score_current)
