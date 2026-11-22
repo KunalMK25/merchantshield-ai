@@ -7,6 +7,7 @@ needed (see services/risk_service.py). Duplicating them here would violate the
 Phase 8 instruction against re-implementing decision logic in the API layer.
 """
 
+import json
 import os
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # merchantshield-ai/backend/
@@ -35,3 +36,24 @@ API_DESCRIPTION = (
     "Strictly detect/flag/recommend — never performs an irreversible financial action."
 )
 API_VERSION = "1.0.0"
+
+
+_CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
+
+
+def resolve_currency_symbol(explicit, data_store_dir) -> str:
+    """
+    Symbol the dashboard shows next to amounts. An explicit MS_CURRENCY_SYMBOL wins; otherwise a dataset
+    workspace reports its own currency (recorded when the dataset was prepared); otherwise rupees, the
+    currency of the original synthetic data. An unreadable config never breaks startup.
+    """
+    if explicit:
+        return explicit
+    try:
+        with open(os.path.join(os.path.dirname(os.path.normpath(str(data_store_dir))), "config.json")) as f:
+            return _CURRENCY_SYMBOLS.get(json.load(f).get("currency"), "₹")
+    except (OSError, ValueError, AttributeError):
+        return "₹"
+
+
+CURRENCY_SYMBOL = resolve_currency_symbol(os.environ.get("MS_CURRENCY_SYMBOL"), DATA_STORE_DIR)

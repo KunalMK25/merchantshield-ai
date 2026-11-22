@@ -1,3 +1,4 @@
+import { compactMoney } from "../utils/currency";
 import { friendlyFeatureLabel } from "../utils/presentation";
 
 function ContributionBar({ contribution }) {
@@ -47,9 +48,7 @@ function TransactionHistory({ payload }) {
     : currentTxn.amount;
 
   const formatCurrency = (amt) => {
-    if (amt >= 100000) return `₹${(amt / 100000).toFixed(1)}L`;
-    if (amt >= 1000) return `₹${(amt / 1000).toFixed(1)}K`;
-    return `₹${amt}`;
+    return compactMoney(amt);
   };
 
   return (

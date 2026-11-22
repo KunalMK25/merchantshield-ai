@@ -38,7 +38,7 @@ from ml.data.daily_batch import DailyStore, DriftConfig, fit_population, simulat
 from ml.evaluation.cost_model import CostAssumptions
 from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import AnomalyConfig, AnomalyDetector, account_day_table, summarize, to_records
-from ml.monitoring.drift import drift_report
+from ml.monitoring.drift import MIN_REFERENCE_ROWS, drift_report
 from ml.monitoring.supervised_alerts import account_day_scores, calibrate_thresholds, detect_supervised
 from ml.datasets.workspace import Workspace
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
@@ -114,9 +114,28 @@ def _log(data_dir: str, entry: dict):
         f.write(json.dumps(_clean(entry)) + "\n")
 
 
-RECENT_DAYS = 14        # trailing window used as the "recent" drift reference
-BASELINE_DAYS = 40      # oldest history used as the slow-creep drift reference
+RECENT_DAYS = 14        # trailing window used as the drift reference when same-weekday days are unavailable
+SAME_WEEKDAY_WEEKS = 4  # a single day is compared with this many earlier weeks of the same weekday
+SAME_WEEKDAY_MIN_WEEKS = 3  # ...and at least this many of them must have data
+BASELINE_DAYS = 60      # window just before the recent one; shown for information, never judged
 ANOMALY_REFERENCE_DAYS = 30
+
+
+def reference_window(feats, day, sim_days):
+    """
+    The days a new day is judged against. A single day is compared with the SAME WEEKDAY over the previous
+    weeks, because real data has a weekly cycle (on Sparkov, Mondays and Tuesdays carry twice the volume of
+    other days): against a mixed 14-day window an ordinary day looked drifted, and the model's score
+    distribution shifted with it (median score PSI 0.11 against 0.00 for the same weekday). A run covering
+    several days, or too little history, falls back to the trailing window. Returns (rows, label).
+    """
+    first = min(sim_days)
+    if len(sim_days) == 1:
+        same = feats[day.isin([first - 7 * k for k in range(1, SAME_WEEKDAY_WEEKS + 1)])]
+        # a single earlier Saturday is too thin a reference: need most of the weeks to be there
+        if day[same.index].nunique() >= SAME_WEEKDAY_MIN_WEEKS and len(same) >= MIN_REFERENCE_ROWS:
+            return same, f"same weekday, last {SAME_WEEKDAY_WEEKS} weeks"
+    return feats[(day >= first - RECENT_DAYS) & (day < first)], f"trailing {RECENT_DAYS} days"
 
 
 def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
@@ -132,8 +151,8 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
     first = min(sim_days)
 
     cur = feats[day.isin(sim_days)]
-    recent = feats[(day >= first - RECENT_DAYS) & (day < first)]
-    baseline = feats[day < min(BASELINE_DAYS, first)]
+    recent, reference_label = reference_window(feats, day, sim_days)
+    baseline = feats[(day >= first - RECENT_DAYS - BASELINE_DAYS) & (day < first - RECENT_DAYS)]
 
     score_ref = score_cur = None
     champ = registry.champion()
@@ -142,6 +161,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
         score_ref = model.predict_proba(recent[FEATURE_COLUMNS])[:, 1]
         score_cur = model.predict_proba(cur[FEATURE_COLUMNS])[:, 1]
     drift = drift_report(recent, baseline, cur, score_ref, score_cur)
+    drift["reference"] = reference_label
 
     used, fallback, thresholds = "unsupervised", None, None
     flags = n_by_day = reference_rate = None

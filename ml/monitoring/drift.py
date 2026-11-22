@@ -2,8 +2,16 @@
 Data drift detection.
 
 Compares the newest transactions against two references:
-  * recent   - the trailing window just before them (catches sudden shifts)
-  * baseline - the oldest history (catches slow creep a trailing window would absorb)
+  * recent   - comparable recent days: the same weekday over earlier weeks for a single new day (real data
+               has a weekly cycle), else the trailing window just before. This alone decides the verdict.
+  * baseline - an older window, reported for information and NEVER judged.
+
+The baseline used to be judged too. On a real two-year dataset it flagged every one of 30 consecutive days
+(median max PSI 1.0): the oldest history differs from today for reasons that are not drift (seasonality,
+and history-based features such as z-scores and new-region flags maturing as customers accumulate
+transactions). Even a 60-day window just before the recent one flagged a third of days. Judged on the
+recent window alone, the same 30 days came out 27 stable, 3 watch, 0 drifted. The cost is real: slow creep
+that a 14-day window absorbs is not caught, only displayed.
 
 Severity comes from the Population Stability Index (PSI), using the usual bands:
 below 0.1 stable, 0.1 to 0.25 moderate, above 0.25 significant. The two-sample
@@ -79,16 +87,15 @@ def severity(value: float) -> str:
     return "stable"
 
 
-def _feature_row(name, recent, baseline, current):
+def _feature_row(name, recent, baseline, current, baseline_ok=True):
     psi_recent = psi(recent[name], current[name])
     ks = ks_test(recent[name], current[name])
     if name in MATURING_FEATURES:
         return {"feature": name, "psi": psi_recent, "psi_recent": psi_recent, "psi_baseline": None,
                 "ks_statistic": ks["statistic"], "ks_p_value": ks["p_value"], "severity": INFORMATIONAL}
-    psi_base = psi(baseline[name], current[name])
-    worst = max(psi_recent, psi_base)
-    return {"feature": name, "psi": worst, "psi_recent": psi_recent, "psi_baseline": psi_base,
-            "ks_statistic": ks["statistic"], "ks_p_value": ks["p_value"], "severity": severity(worst)}
+    psi_base = psi(baseline[name], current[name]) if baseline_ok else None   # information only
+    return {"feature": name, "psi": psi_recent, "psi_recent": psi_recent, "psi_baseline": psi_base,
+            "ks_statistic": ks["statistic"], "ks_p_value": ks["p_value"], "severity": severity(psi_recent)}
 
 
 def drift_report(recent_reference, baseline_reference, current, score_reference=None, score_current=None) -> dict:
@@ -106,7 +113,8 @@ def drift_report(recent_reference, baseline_reference, current, score_reference=
         report["status"] = "insufficient_data"
         return report
 
-    report["features"] = [_feature_row(f, recent_reference, baseline_reference, current)
+    baseline_ok = baseline_reference is not None and len(baseline_reference) >= MIN_REFERENCE_ROWS
+    report["features"] = [_feature_row(f, recent_reference, baseline_reference, current, baseline_ok)
                           for f in DRIFT_FEATURES]
     judged = [f for f in report["features"] if f["severity"] != INFORMATIONAL]
     severities = [f["severity"] for f in judged]

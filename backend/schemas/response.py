@@ -6,6 +6,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_version: Optional[str] = None
+    currency: Optional[str] = None   # symbol the dashboard shows next to amounts
 
 
 class ModelInfoResponse(BaseModel):

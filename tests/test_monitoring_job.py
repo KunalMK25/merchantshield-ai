@@ -80,3 +80,49 @@ def test_a_monitoring_failure_does_not_stop_retraining(tmp_path, mini_base, monk
     report = run_daily_job(cfg(tmp_path, mini_base))
     assert report["status"] == "ok" and report["decision"]["promoted"] is True
     assert "monitor broke" in report["monitoring"]["error"]
+
+
+# ------------------------------------------------ comparing like with like (weekday)
+
+def weekly_frame(days=45, rows_per_day=900, weekend_shift=2.0, seed=0):
+    """Rows with a weekly cycle: weekend days (day % 7 in 5, 6) have larger amounts."""
+    import numpy as np
+    from ml.monitoring.drift import DRIFT_FEATURES
+    rng = np.random.default_rng(seed)
+    parts = []
+    for d in range(days):
+        df = pd.DataFrame({f: rng.normal(size=rows_per_day) for f in DRIFT_FEATURES})
+        if d % 7 in (5, 6):
+            df["amount"] = df["amount"] + weekend_shift
+        df["day"] = d
+        parts.append(df)
+    feats = pd.concat(parts, ignore_index=True)
+    return feats, feats["day"]
+
+
+def test_a_single_day_is_compared_with_the_same_weekday_in_earlier_weeks():
+    from ml.retrain.job import reference_window
+    feats, day = weekly_frame()
+    ref, label = reference_window(feats, day, [40])
+    assert sorted(ref["day"].unique()) == [12, 19, 26, 33] and "weekday" in label
+
+
+def test_a_multi_day_run_or_a_thin_history_falls_back_to_the_trailing_window():
+    from ml.retrain.job import reference_window
+    feats, day = weekly_frame()
+    ref, label = reference_window(feats, day, [40, 41])
+    assert sorted(ref["day"].unique()) == list(range(26, 40)) and "trailing" in label
+    ref2, label2 = reference_window(feats, day, [10])           # fewer than 4 weeks of history exist
+    assert "trailing" in label2 and ref2["day"].max() == 9
+
+
+def test_weekly_seasonality_is_not_mistaken_for_drift():
+    """The reason for the rule: a Saturday looks 'drifted' next to a mixed 14-day window, and normal next to Saturdays."""
+    from ml.monitoring.drift import drift_report
+    from ml.retrain.job import RECENT_DAYS, reference_window
+    feats, day = weekly_frame()
+    cur = feats[day == 40]                                      # day 40 is a Saturday in this frame (40 % 7 == 5)
+    trailing = feats[(day >= 40 - RECENT_DAYS) & (day < 40)]
+    same, _ = reference_window(feats, day, [40])
+    assert drift_report(trailing, trailing, cur)["status"] == "drifted"
+    assert drift_report(same, same, cur)["status"] == "stable"

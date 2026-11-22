@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import ErrorBanner from "./ErrorBanner";
+import { money } from "../utils/currency";
 
 const NAME_KEY = "ms-analyst";
 const TOKEN_KEY = "ms-analyst-token";
@@ -15,7 +16,6 @@ const store = {
 };
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
-const money = (v) => `₹${Math.round(v || 0).toLocaleString("en-IN")}`;
 const SEV_PILL = { critical: "pill-bad", high: "pill-warn" };
 const ACCT_PILL = { active: "pill-muted", held: "pill-warn", closed: "pill-bad" };
 const EVENT_LABEL = {

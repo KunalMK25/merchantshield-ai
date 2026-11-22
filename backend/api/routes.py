@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 
+from backend.config import settings
 from backend.schemas.transaction import RiskRequest
 from backend.schemas.response import (
     HealthResponse, ModelInfoResponse, RiskScoreResponse, RiskExplainResponse,
@@ -32,6 +33,7 @@ def health(request: Request):
         status="ok" if bundle is not None else "degraded",
         model_loaded=bundle is not None,
         model_version=bundle.metadata.get("model_name") if bundle else None,
+        currency=settings.CURRENCY_SYMBOL,
     )
 
 

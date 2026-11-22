@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import ErrorBanner from "./ErrorBanner";
+import { money } from "../utils/currency";
 
-const money = (v) => (typeof v === "number" ? `₹${Math.round(v).toLocaleString("en-IN")}` : "—");
 const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—");
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 

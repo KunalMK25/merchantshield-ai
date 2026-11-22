@@ -466,15 +466,23 @@ python -m ml.retrain.job --drift amount_scale=2.5   # shift the world on purpose
 Every retraining cycle also checks the new day for two different problems. Results are written to
 `ml/data_store/` and shown on the dashboard's **Drift & anomalies** page.
 
-**Data drift.** The new day is compared with the trailing 14 days and with the oldest history using
-the Population Stability Index (below 0.10 stable, 0.10 to 0.25 watch, above 0.25 drift), with the
-KS statistic alongside. The serving model's score distribution is monitored too, because shifts spread
-thinly over many features appear there first. Two choices came from measuring the data: counts that
-grow every day by construction (`prior_txn_count`, `account_age_days`) are shown for information but never
-judged (in a dense history today's values always sit above the trailing window, a false alarm every day),
-and weekday is not monitored (a one-day window has a single weekday). A normal day
-stays under PSI 0.07 on every feature; an injected 2.5x spending shift reads 3.2 and is attributed to
-the amount features.
+**Data drift.** The new day is compared with **comparable days** using the Population Stability Index (below
+0.10 stable, 0.10 to 0.25 watch, above 0.25 drift), with the KS statistic alongside. For a single new day the
+comparable days are the same weekday over the previous four weeks (at least three must exist), because real data
+has a weekly cycle; otherwise, and for runs covering several days, the trailing 14 days. The serving model's
+score distribution is monitored too, because shifts spread thinly over many features appear there first.
+Choices that came from measuring the data, and sometimes from getting it wrong first:
+- Counts that grow every day by construction (`prior_txn_count`, `account_age_days`) are shown but never judged.
+- Weekday itself is not a monitored feature.
+- A longer-term comparison (the 60 days before the recent window) is **shown for information and never judged**.
+  When it was judged, a real two-year dataset came out "drifted" on all 30 days checked, because seasonality and
+  maturing history features differ from today for reasons that are not drift. The cost: slow creep is displayed
+  but not caught.
+- Comparing a single day with a mixed 14-day window made ordinary days look drifted on real data (the model's
+  median score PSI was 0.11, against 0.00 for the same weekday).
+
+A normal synthetic day stays under PSI 0.07 on every feature; an injected 2.5x spending shift reads 3.2 and is
+attributed to the amount features.
 
 **Account anomalies.** Each customer-day is judged against that customer's own earlier norm, not
 against other customers. An Isolation Forest (unsupervised, fitted on earlier days only) is combined
@@ -674,6 +682,31 @@ Caveats, stated plainly:
   extended the grid, for exactly that reason, after seeing validation numbers; I had also seen that prototype's
   (poor) test numbers, so this is not a perfectly blind design. The final run above is the first with the
   finished design.
+
+### Replaying 30 real days through the whole pipeline
+
+`python -m ml.retrain.job --workspace sparkov --alerts supervised --models lightgbm xgboost`, run once per day for
+the 30 held-back days (2020-12-02 to 2020-12-31: 133,334 real transactions, 247 of them fraud, on 50 compromised
+account-days). Only two models compete, to keep a daily run to about 15 seconds. Results, as measured:
+
+- **Drift:** 18 days stable, 7 watch, 5 drifted. All five drifted days are the first five (2 to 6 December), where
+  daily volume roughly doubled for holiday shopping and `time_since_prev_txn_min` shifted; it settles to watch,
+  then stable, as the same-weekday reference catches up. I read that as the monitor working, not misfiring.
+  (My first two versions called every day, then most days, drifted; the fixes are described above.)
+- **Promotions:** the champion changed on 10 of 30 days (LightGBM and XGBoost trading places). The 3% margin does
+  not stop churn on a validation window this small and noisy.
+- **Alerts:** 139 reached the analyst queue (30 critical, 109 high), from the supervised scores after day 1 (day 1
+  had no champion yet, so it used the unsupervised detector). Scored against the real labels afterwards:
+
+  | Tier | Alerts | Correct | Precision | Recall |
+  |---|---|---|---|---|
+  | Critical | 30 | 17 | 57% | 34% |
+  | Critical + high | 139 | 27 | 19% | 54% |
+
+  Only 50 compromised account-days exist in this window, so these are rough estimates. Recall is lower, and the
+  wider tier less precise, than in the single big evaluation above, because the job re-chooses its thresholds every
+  day from a 10-day validation window with few positives.
+- Amounts in the dashboard follow the data's currency (`$` for Sparkov; set `MS_CURRENCY_SYMBOL` to override).
 
 Downloading on a network that inspects HTTPS (a corporate gateway) fails with `CERTIFICATE_VERIFY_FAILED`
 because Python does not trust the gateway's certificate. If you accept routing your Kaggle login through that
@@ -896,10 +929,11 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_datasets.py`, `test_dataset_workspace.py`, `test_dataset_evaluate.py` | Loaders for each dataset layout, validation and fit rating, prepare, real-day replay, evaluation |
 | `test_anomaly_calibration.py`, `test_dataset_calibration.py` | Config-driven detector, quantile thresholds, validation-only tuning, test-label immunity, overlap guard |
 | `test_supervised_alerts.py`, `test_supervised_integration.py` | Account-day scores, distinct-tier thresholds, test-label immunity, job fallback and integration |
+| `test_currency_setting.py` | The dashboard's currency follows the served data |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 467 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 482 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
@@ -923,6 +957,8 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   have not been run against the real downloads.
 - **The unsupervised account detector is weak on real data.** On Sparkov, even after calibration, its critical tier
   is about 13% precise on unseen days. Supervised alerts (`--alerts supervised`) reach 57% there, but need labels.
+- **Slow creep is not caught.** Drift is judged against the last weeks only; the longer comparison is displayed but
+  not judged, because on real data it flagged ordinary seasonal and maturing differences every day.
 - **Champion churn.** Promotion compares models on a validation window that moves every day, so the
   champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
 - **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if

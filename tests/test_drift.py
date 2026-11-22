@@ -84,6 +84,30 @@ def test_report_is_stable_when_nothing_changed():
     assert all(f["severity"] in ("stable", "informational") for f in rep["features"])
 
 
+def test_a_shift_against_the_long_baseline_alone_is_reported_but_not_judged():
+    """On a real two-year dataset the oldest history differs from today for reasons that are not drift
+    (seasonality, histories maturing), which flagged every day. Only the recent window decides the verdict."""
+    recent, base, cur = frame(8000, 1), frame(8000, 2, shift=2.0), frame(2000, 3)
+    rep = drift_report(recent, base, cur)
+    amount = next(f for f in rep["features"] if f["feature"] == "amount")
+    assert amount["psi_baseline"] > 0.25                    # the difference is still shown...
+    assert amount["severity"] == "stable" and amount["psi"] == amount["psi_recent"]   # ...but not judged
+    assert rep["status"] == "stable" and rep["flagged_features"] == [] and rep["max_psi"] < 0.1
+
+
+def test_a_sudden_shift_is_still_caught_by_the_recent_window_even_with_a_matching_baseline():
+    recent, cur = frame(8000, 1), frame(2000, 3, shift=2.0)
+    rep = drift_report(recent, frame(8000, 2, shift=2.0), cur)   # the baseline happens to look like today
+    assert rep["status"] == "drifted" and rep["flagged_features"] == ["amount"]
+
+
+def test_a_missing_or_tiny_baseline_is_skipped_not_an_error():
+    recent, cur = frame(8000, 1), frame(2000, 3)
+    for baseline in (frame(50, 2), frame(0, 2)):
+        rep = drift_report(recent, baseline, cur)
+        assert all(f["psi_baseline"] is None for f in rep["features"]) and rep["status"] == "stable"
+
+
 def test_features_that_grow_with_time_never_trigger_drift_on_their_own():
     """Cumulative counts sit above the trailing window every day in a dense history: a false alarm, not drift."""
     recent, base, cur = frame(6000, 1), frame(6000, 2), frame(2000, 3)

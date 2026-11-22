@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import ErrorBanner from "./ErrorBanner";
+import { money } from "../utils/currency";
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 const fixed = (v, d = 3) => (typeof v === "number" ? v.toFixed(d) : "—");
@@ -166,7 +167,7 @@ export default function DriftPage() {
                               ? r.signals.map((s) => <div key={s.name}>{s.detail}</div>)
                               : <div className="text-tertiary">Behaviour unusual compared with other accounts</div>}
                           </td>
-                          <td className="mono">{r.n_txns} · ₹{Math.round(r.total_amount).toLocaleString("en-IN")}</td>
+                          <td className="mono">{r.n_txns} · {money(r.total_amount)}</td>
                           <td>{r.recommended_action}</td>
                         </tr>
                       ))}
@@ -179,12 +180,12 @@ export default function DriftPage() {
             <section className="panel">
               <div className="panel-header">
                 <span className="panel-title">Feature drift, latest run</span>
-                <span className="small text-tertiary">{d.n_current?.toLocaleString("en-IN")} new vs {d.n_reference?.toLocaleString("en-IN")} recent</span>
+                <span className="small text-tertiary">{d.n_current?.toLocaleString("en-IN")} new vs {d.n_reference?.toLocaleString("en-IN")} comparable ({d.reference || "recent days"})</span>
               </div>
               <div className="panel-body table-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Feature</th><th>Shift (PSI)</th><th>vs recent</th><th>vs baseline</th><th>KS</th><th>Verdict</th></tr>
+                    <tr><th>Feature</th><th>Shift (PSI)</th><th>vs comparable days</th><th>vs earlier (info)</th><th>KS</th><th>Verdict</th></tr>
                   </thead>
                   <tbody>
                     {[...d.features, ...(d.score ? [{ feature: "model score", ...d.score, psi_recent: d.score.psi, psi_baseline: null, ks_statistic: d.score.ks_statistic }] : [])]
@@ -210,7 +211,9 @@ export default function DriftPage() {
                 </table>
                 <p className="context-note" style={{ marginTop: 12 }}>
                   Counts like <span className="mono">prior_txn_count</span> and <span className="mono">account_age_days</span> grow
-                  every day by construction, so they are shown for information and never judged. Weekday is not monitored.
+                  every day by construction, so they are shown for information and never judged. The verdict compares with the same weekday in earlier weeks
+                  (or the last 14 days); the longer comparison is displayed but not judged, because on real data it flags ordinary seasonal and maturing
+                  differences every day. Slow creep is therefore not caught. Weekday is not monitored.
                 </p>
               </div>
             </section>

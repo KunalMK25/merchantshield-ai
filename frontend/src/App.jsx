@@ -13,6 +13,7 @@ import RetrainPage from "./components/RetrainPage";
 import DriftPage from "./components/DriftPage";
 import AlertsPage from "./components/AlertsPage";
 import { useTheme } from "./hooks/useTheme";
+import { setCurrency } from "./utils/currency";
 import "./styles/App.css";
 
 const VIEWS = ["evaluate", "monitor", "registry", "retrain", "drift", "alerts"];
@@ -59,6 +60,7 @@ export default function App() {
   const loadHealth = useCallback(async () => {
     try {
       const data = await api.getHealth();
+      setCurrency(data.currency);
       setHealth(data);
       setHealthError(null);
     } catch (err) {
