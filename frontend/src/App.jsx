@@ -6,9 +6,14 @@ import ExplanationPanel from "./components/ExplanationPanel";
 import AuditLogTable from "./components/AuditLogTable";
 import ModelInfoPanel from "./components/ModelInfoPanel";
 import ErrorBanner from "./components/ErrorBanner";
+import Sidebar from "./components/Sidebar";
+import StatCard from "./components/StatCard";
+import { useTheme } from "./hooks/useTheme";
 import "./styles/App.css";
 
 export default function App() {
+  const { theme, toggle } = useTheme();
+  const [view, setView] = useState("evaluate");
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState(null);
 
@@ -106,98 +111,81 @@ export default function App() {
   const isOk = health?.status === "ok" && health?.model_loaded;
   const modelVersion = health?.model_version || modelInfo?.model_version || "—";
   const threshold = modelInfo?.decision_threshold ?? "—";
+  const m = modelInfo?.test_metrics_at_frozen_threshold;
+  const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—");
+
+  const status = healthError
+    ? { tone: "degraded", label: "API unreachable" }
+    : isOk
+      ? { tone: "ok", label: "All systems operational" }
+      : { tone: "degraded", label: "Model degraded" };
 
   return (
     <div className="app-shell">
-      {/* ── Header ───────────────────────────────────────────────── */}
-      <header className="app-header">
-        <div className="header-brand">
-          <div className="app-title">MerchantShield AI</div>
-          <div className="app-tagline">Fraud risk decision support</div>
-          <div className="app-event-badge" aria-label="Razorpay AI Buildathon 2026, Track 02">
-            Razorpay AI Buildathon 2026 · Track 02 · DEMO MODE
-          </div>
+      <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} />
+
+      <main className="main-col">
+        <div className="stat-row">
+          <StatCard label="Model" value={modelVersion} hint="Active classifier" />
+          <StatCard label="Threshold" value={threshold} hint="Cost-optimised cut-off" />
+          <StatCard label="Precision" value={pct(m?.precision)} hint="Held-out test set" />
+          <StatCard label="Recall" value={pct(m?.recall)} hint="Fraud caught" tone="good" />
         </div>
 
-        <div className="header-status">
-          <div className="header-status-pill" role="status">
-            <span
-              className={`header-status-dot ${
-                healthError ? "degraded" : isOk ? "ok" : "degraded"
-              }`}
-              aria-hidden="true"
-            />
-            <span className="header-status-label">
-              {healthError ? "Unreachable" : isOk ? "Operational" : "Degraded"}
-            </span>
-          </div>
-          <div className="header-status-meta" aria-label="System metadata">
-            <span className="header-status-item">
-              Model: <strong className="mono">{modelVersion}</strong>
-            </span>
-            <span className="header-status-item">
-              Threshold: <strong className="mono">{threshold}</strong>
-            </span>
-            {modelInfo?.test_metrics_at_frozen_threshold && (
-              <>
-                <span className="header-status-item">
-                  Precision:{" "}
-                  <strong className="mono">
-                    {(modelInfo.test_metrics_at_frozen_threshold.precision * 100).toFixed(1)}%
-                  </strong>
-                </span>
-                <span className="header-status-item">
-                  Recall:{" "}
-                  <strong className="mono">
-                    {(modelInfo.test_metrics_at_frozen_threshold.recall * 100).toFixed(1)}%
-                  </strong>
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+        {view === "evaluate" && (
+          <>
+            <header className="page-head">
+              <h1 className="page-title">Evaluate a transaction</h1>
+              <p className="page-sub">
+                Score a payment, see which signals drove the risk, and record the recommended action.
+              </p>
+            </header>
+            <p className="context-note">
+              ⓘ Prototype using synthetic data. Not connected to any live payment system.
+            </p>
+            <div className="main-grid">
+              <TransactionForm onSubmit={handleEvaluate} isSubmitting={evaluateLoading} />
+              <div className="stack">
+                {evaluateError && (
+                  <ErrorBanner
+                    message="Could not evaluate this transaction."
+                    detail={evaluateError}
+                  />
+                )}
+                <RiskResultCard result={result} isLoading={evaluateLoading} />
+                <ExplanationPanel
+                  explanation={explanation}
+                  isLoading={evaluateLoading}
+                  payload={currentPayload}
+                />
+              </div>
+            </div>
+          </>
+        )}
 
-      <main>
-        {/* ── Context bar ──────────────────────────────────────────── */}
-        <p className="context-bar">
-          Evaluate transaction risk, understand why the model flagged it, and record the decision.
-          <br />
-          <em style={{ fontSize: "0.9em", opacity: 0.7 }}>
-            ⓘ Prototype using synthetic data. Not connected to live Razorpay transaction systems.
-          </em>
-        </p>
-
-        {/* ── Evaluation grid ──────────────────────────────────────── */}
-        <div className="main-grid">
-          <TransactionForm onSubmit={handleEvaluate} isSubmitting={evaluateLoading} />
-
-          <div className="stack">
-            {evaluateError && (
-              <ErrorBanner
-                message="Could not evaluate this transaction."
-                detail={evaluateError}
+        {view === "monitor" && (
+          <>
+            <header className="page-head">
+              <h1 className="page-title">Model &amp; audit trail</h1>
+              <p className="page-sub">
+                What the model was trained on, how it performed, and every decision it has made.
+              </p>
+            </header>
+            <div className="stack">
+              <ModelInfoPanel
+                modelInfo={modelInfo}
+                isLoading={modelInfoLoading}
+                error={modelInfoError}
               />
-            )}
-            <RiskResultCard result={result} isLoading={evaluateLoading} />
-            <ExplanationPanel explanation={explanation} isLoading={evaluateLoading} payload={currentPayload} />
-          </div>
-        </div>
-
-        {/* ── Bottom panels ────────────────────────────────────────── */}
-        <div className="stack" style={{ marginTop: 24 }}>
-          <ModelInfoPanel
-            modelInfo={modelInfo}
-            isLoading={modelInfoLoading}
-            error={modelInfoError}
-          />
-          <AuditLogTable
-            entries={auditEntries}
-            isLoading={auditLoading}
-            error={auditError}
-            onRefresh={loadAuditLog}
-          />
-        </div>
+              <AuditLogTable
+                entries={auditEntries}
+                isLoading={auditLoading}
+                error={auditError}
+                onRefresh={loadAuditLog}
+              />
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

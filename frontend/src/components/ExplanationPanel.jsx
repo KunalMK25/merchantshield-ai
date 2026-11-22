@@ -53,8 +53,8 @@ function TransactionHistory({ payload }) {
   };
 
   return (
-    <div style={{ marginBottom: 16, paddingTop: 12, borderTop: "1px solid #eee" }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#333", marginBottom: 8 }}>
+    <div style={{ marginBottom: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
         Transaction History ({priorTxns.length} prior)
       </div>
 
@@ -69,7 +69,7 @@ function TransactionHistory({ payload }) {
               style={{
                 flex: 1,
                 height: `${height}px`,
-                backgroundColor: "#c9d4e8",
+                backgroundColor: "var(--border-strong)",
                 borderRadius: 2,
                 cursor: "default",
                 title: formatCurrency(t.amount),
@@ -83,7 +83,7 @@ function TransactionHistory({ payload }) {
           style={{
             flex: 1,
             height: `${Math.max(10, ((currentTxn.amount - minAmount) / range) * 35)}px`,
-            backgroundColor: "#4a9d6f",
+            backgroundColor: "var(--risk-high)",
             borderRadius: 2,
             fontWeight: 600,
             title: formatCurrency(currentTxn.amount),
@@ -93,7 +93,7 @@ function TransactionHistory({ payload }) {
       </div>
 
       {/* Stats row */}
-      <div style={{ fontSize: 11, color: "#666", display: "flex", gap: 16, justifyContent: "space-between" }}>
+      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 16, justifyContent: "space-between" }}>
         <div>
           <strong>Average:</strong> {formatCurrency(avgPrior)}
         </div>
@@ -158,14 +158,14 @@ export default function ExplanationPanel({ explanation, isLoading, payload }) {
         {explanation.cold_start_context && (
           <div
             style={{
-              backgroundColor: "#f0f4f8",
-              border: "1px solid #b3c5d9",
-              borderLeft: "4px solid #b3c5d9",
+              backgroundColor: "var(--surface-inset)",
+              border: "1px solid var(--border-strong)",
+              borderLeft: "4px solid var(--accent)",
               borderRadius: 4,
               padding: "8px 12px",
               marginBottom: 12,
               fontSize: 12,
-              color: "#334455",
+              color: "var(--text-secondary)",
               lineHeight: 1.5,
               fontStyle: "italic",
             }}
@@ -176,7 +176,7 @@ export default function ExplanationPanel({ explanation, isLoading, payload }) {
             <div style={{ marginTop: 4, fontSize: 11 }}>
               {explanation.cold_start_context}
             </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: "#556677", fontStyle: "normal" }}>
+            <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-tertiary)", fontStyle: "normal" }}>
               <em>Note: This is a contextual risk factor, not a model contribution (SHAP).</em>
             </div>
           </div>

@@ -35,10 +35,10 @@ function SignalQualityBadge({ signalQuality }) {
   if (!signalQuality) return null;
 
   const levelColors = {
-    MINIMAL: "#d4524f",
-    LIMITED: "#e8a536",
-    MODERATE: "#a8b820",
-    ESTABLISHED: "#4a9d6f",
+    MINIMAL: "var(--risk-critical)",
+    LIMITED: "var(--risk-medium)",
+    MODERATE: "var(--accent-2)",
+    ESTABLISHED: "var(--risk-low)",
   };
 
   const levelLabels = {
@@ -54,8 +54,8 @@ function SignalQualityBadge({ signalQuality }) {
         display: "inline-block",
         padding: "4px 8px",
         borderRadius: 4,
-        backgroundColor: levelColors[signalQuality.level] || "#ccc",
-        color: "white",
+        backgroundColor: levelColors[signalQuality.level] || "var(--border-strong)",
+        color: "var(--bg)",
         fontSize: 11,
         fontWeight: 600,
         marginTop: 8,
@@ -118,13 +118,13 @@ export default function RiskResultCard({ result, isLoading }) {
         {isLimitedContext && (
           <div
             style={{
-              backgroundColor: "#fff3cd",
-              border: "1px solid #ffc107",
+              backgroundColor: "var(--risk-medium-bg)",
+              border: "1px solid var(--risk-medium-border)",
               borderRadius: 4,
               padding: "8px 12px",
               marginBottom: 12,
               fontSize: 13,
-              color: "#856404",
+              color: "var(--risk-medium)",
               lineHeight: 1.4,
             }}
             role="alert"
@@ -189,7 +189,7 @@ export default function RiskResultCard({ result, isLoading }) {
           style={{
             fontSize: 12,
             color: "var(--text-secondary)",
-            backgroundColor: "#f5f5f5",
+            backgroundColor: "var(--surface-inset)",
             padding: 8,
             borderRadius: 4,
             marginBottom: 12,

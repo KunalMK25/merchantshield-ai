@@ -160,7 +160,7 @@ so fraud labels aren't trivially recoverable from the engineered features.
   failed-transaction ratio, account age, time-of-day), each computed **strictly from
   prior transactions**, enforced by dedicated leakage tests
 
-**No real payment data was used.** No Razorpay, Visa, Mastercard, or bank data.
+**No real payment data was used.** No Visa, Mastercard, or bank data.
 All reported metrics are on this synthetic dataset unless explicitly labelled
 [External validation](#external-validation--ieee-cis).
 
@@ -300,10 +300,9 @@ Low precision (6.6%) is structurally explained by the 3.5% prevalence ceiling an
 two absent features. The frozen model does not transfer — the synthetic and real
 distributions are too different.
 
-### Phase 17 — Held-out real-data evaluation (Razorpay submission)
+### Phase 17 — Held-out real-data evaluation
 
-Phase 17 provides the canonical held-out evaluation answering the Razorpay AI Risk
-Manager track requirement: *"measured precision and recall on a held-out test set,
+Phase 17 provides the canonical held-out evaluation answering the project requirement: *"measured precision and recall on a held-out test set,
 including false-positive cost."*
 
 A fresh LightGBM was trained on the IEEE-CIS training split (16 features: 15 base +
@@ -331,7 +330,7 @@ A fresh LightGBM was trained on the IEEE-CIS training split (16 features: 15 bas
 | **Actually legitimate** | 65,905 (TN) | 48,139 (FP) |
 | **Actually fraud** | 821 (FN) | 3,243 (TP) |
 
-> *IEEE-CIS is US e-commerce data from Vesta Corporation, not Razorpay/UPI/POS transactions.*
+> *IEEE-CIS is US e-commerce data from Vesta Corporation, not UPI or POS transactions.*
 
 **Low precision (6.3%) explained honestly:** The 3.5% fraud prevalence sets a
 structural ceiling; two key fraud signals (device novelty, failure-transaction ratio)
@@ -342,11 +341,11 @@ model failure — it is a data-compatibility constraint documented in full.
 reproduce:
 ```bash
 export IEEE_DATA_DIR=/path/to/ieee_cis_data
-python ml/external/ieee/razorpay_validation.py
+python ml/external/ieee/heldout_validation.py
 ```
 
 Full analysis in
-[`docs/phase17_razorpay_real_data_validation.md`](docs/phase17_razorpay_real_data_validation.md),
+[`docs/phase17_heldout_real_data_validation.md`](docs/phase17_heldout_real_data_validation.md),
 [`docs/external_validation_ieee_cis.md`](docs/external_validation_ieee_cis.md), and
 [`docs/phase15_card_product_experiment.md`](docs/phase15_card_product_experiment.md).
 
@@ -406,7 +405,7 @@ merchantshield-ai/
 │   └── external/         # External validation track (IEEE-CIS, Phases 14–17)
 │       └── ieee/         # Adapter, features, split, experiments A+B,
 │                         #   card_product_features (Phase 15),
-│                         #   razorpay_validation.py (Phase 17 — canonical held-out)
+│                         #   heldout_validation.py (Phase 17 — canonical held-out)
 ├── frontend/             # React/Vite dashboard
 ├── tests/                # pytest suite: leakage, explainability, decision engine, API,
 │                         #   IEEE-CIS adapter/features, card-product, Phase 17 validation
@@ -524,7 +523,7 @@ in CI). CI runs the full suite on every push to `main`.
   ROC-AUC 0.771 and 79.8% recall on IEEE-CIS real-world e-commerce data, but precision
   is 6.3% at the selected operating point. The frozen production model does not transfer
   (ROC-AUC 0.443). See [External validation](#external-validation--ieee-cis).
-- **Not Razorpay data.** The real-data evaluation uses IEEE-CIS (Vesta Corporation
+- **not production merchant data.** The real-data evaluation uses IEEE-CIS (Vesta Corporation
   US e-commerce). Not UPI, not POS, not Indian merchant transactions.
 - **No authentication.** The API and dashboard have no login/access control.
 - **No live transaction store.** Prior transaction history must be supplied per-request

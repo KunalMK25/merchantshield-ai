@@ -1,4 +1,4 @@
-# Phase 17 — Razorpay Real-Data Held-Out Validation
+# Phase 17 — Real-Data Held-Out Validation
 
 *External validation track. No MerchantShield v1 production code was modified.*
 
@@ -6,7 +6,7 @@
 
 ## 1. Objective
 
-The Razorpay AI Risk Manager track requires:
+The project evaluation requires:
 
 > "Build a working detector, verifier or auto-responder for one class of loss,
 > with measured precision and recall on a held-out test set."
@@ -35,13 +35,13 @@ dataset for this evaluation:
   behavioural features (velocity, amount z-score, account familiarity).
 
 **Important caveats:**
-- This is **not Razorpay data**. It is US e-commerce card-not-present fraud from
+- This is **not production merchant data**. It is US e-commerce card-not-present fraud from
   Vesta Corporation.
 - It is not UPI, POS, or Indian merchant transaction data.
 - Fraud patterns in e-commerce (account takeover + chargeback) differ from
   MerchantShield's synthetic merchant context.
 - All results should be labelled "evaluated on IEEE-CIS real-world e-commerce data"
-  rather than "proven on Razorpay transactions."
+  rather than "proven on production merchant transactions."
 
 ---
 
@@ -93,15 +93,15 @@ train_identity.csv      (~26.5 MB — optional device info, 24.4% coverage)
 3. Download `train_transaction.csv` and `train_identity.csv`
 4. Place both files in the directory specified by `IEEE_DATA_DIR`
 
-If the data is absent, `razorpay_validation.py` stops immediately and prints exact
+If the data is absent, `heldout_validation.py` stops immediately and prints exact
 download instructions. It does **not** fall back to synthetic data or fabricate metrics.
 
 **Run the experiment:**
 ```bash
-python ml/external/ieee/razorpay_validation.py
+python ml/external/ieee/heldout_validation.py
 
 # Or with a custom data directory:
-python ml/external/ieee/razorpay_validation.py --data-dir /path/to/data
+python ml/external/ieee/heldout_validation.py --data-dir /path/to/data
 ```
 
 ---
@@ -160,7 +160,7 @@ All inherited from Phases 14 and 15, enforced structurally:
 | `card_product_share` causal | `cumcount()` per `(card, product)` group, ascending `TransactionDT` | `test_card_product_features.py` (35 tests) |
 | `isFraud` never used in feature construction | `adapt()` passes only raw transaction fields to `build_features` | `test_ieee_external.py::TestNoLabelLeakage` |
 | Threshold selected on validation only | `_val_sweep()` and `_select_threshold()` never receive test data | `test_phase17_validation.py::TestSelectThreshold::test_does_not_use_test_data` |
-| Test set scored exactly once | Single `model.predict_proba(X_test)` call after threshold freeze | Code review of `razorpay_validation.py` step 7 |
+| Test set scored exactly once | Single `model.predict_proba(X_test)` call after threshold freeze | Code review of `heldout_validation.py` step 7 |
 | Prohibited columns excluded | `ieee_adapter.adapt()` raises `ValueError` on V/C/M columns | `test_ieee_external.py::TestProhibitedColumns` |
 
 ---
@@ -249,7 +249,7 @@ on external validation data.
 - FP cost: 50 cost units per false positive (flat)
 - FN cost: 0.5 × transaction amount per missed fraud
 
-**These are illustrative assumptions, not measured Razorpay values.**
+**These are illustrative assumptions, not measured production values.**
 
 At threshold 0.35: 48,139 false positives out of 114,044 legitimate transactions
 — **42.2% of legitimate transactions are incorrectly flagged**. Each represents a
@@ -386,8 +386,8 @@ and recall. Precision is structurally limited by prevalence and missing features
 
 ## 15. Limitations
 
-1. **Not Razorpay data.** IEEE-CIS is US e-commerce card-not-present fraud.
-   MerchantShield was designed for a merchant payment context (UPI/POS/Razorpay-style).
+1. **not production merchant data.** IEEE-CIS is US e-commerce card-not-present fraud.
+   MerchantShield was designed for a merchant payment context (UPI/POS-style).
    Fraud patterns differ.
 
 2. **Low external precision (6.3%).** Structurally explained by: 3.5% prevalence
@@ -398,7 +398,7 @@ and recall. Precision is structurally limited by prevalence and missing features
    operationally expensive. Real deployment would require calibrated FP cost assumptions.
 
 4. **Cost model is illustrative.** `fp_cost=50` and `fn_cost_fraction=0.5` are
-   assumptions, not measured Razorpay or Vesta merchant economics.
+   assumptions, not measured real-world or Vesta merchant economics.
 
 5. **D11 proxy for account age.** 47.3% of rows have `account_age_days=0` due to
    missing D11. Despite this, it ranks 6th in importance — a degraded but non-trivial
@@ -414,7 +414,7 @@ and recall. Precision is structurally limited by prevalence and missing features
 
 ---
 
-## 16. Razorpay objective assessment
+## 16. Objective assessment
 
 **Does MerchantShield now satisfy the AI Risk Manager track requirements?**
 
@@ -431,7 +431,7 @@ and recall. Precision is structurally limited by prevalence and missing features
 | Honest metric reporting | **YES** | Poor precision reported honestly with structural explanation |
 
 **What remains unproven:**
-- Performance on actual Razorpay transaction data
+- Performance on actual production merchant data
 - Generalisation to UPI/POS/Indian merchant fraud patterns
 - Threshold and cost-model calibration on real merchant economics
 - Performance under concept drift or adversarial fraud adaptation
@@ -456,7 +456,7 @@ The Phase 17 experiment provides the strongest available evidence:
 - The frozen production model (`lgbm_v1`) does **not** transfer to IEEE-CIS
   (ROC-AUC 0.443) — a separately documented finding that is unchanged by Phase 17.
 
-The system answers the Razorpay brief's core question with honest, defensible metrics:
+The system answers the core evaluation question with honest, defensible metrics:
 
 > *MerchantShield detects 79.8% of real-world e-commerce fraud at 6.3% precision
 > on a chronological held-out test set, with false-positive cost quantified under
@@ -466,6 +466,6 @@ The system answers the Razorpay brief's core question with honest, defensible me
 
 ---
 
-*Produced by Phase 17 experiment. Source: `ml/external/ieee/razorpay_validation.py`.
-All metrics from `ml/external/ieee/results/phase17_razorpay_results.json` (gitignored
+*Produced by Phase 17 experiment. Source: `ml/external/ieee/heldout_validation.py`.
+All metrics from `ml/external/ieee/results/phase17_heldout_results.json` (gitignored
 — reproduce by running the experiment script with the local IEEE-CIS dataset).*

@@ -1,7 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
+// Dev server proxies API calls to the FastAPI backend on :8000.
+const API = process.env.VITE_PROXY_TARGET || 'http://localhost:8000'
+const apiPaths = ['/health', '/model', '/risk', '/audit-log']
+
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: Object.fromEntries(apiPaths.map((p) => [p, { target: API, changeOrigin: true }])),
+  },
 })

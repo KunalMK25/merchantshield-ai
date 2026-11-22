@@ -21,8 +21,8 @@ AUDIT_DB_URL = f"sqlite:///{AUDIT_DB_PATH}"
 
 API_TITLE = "MerchantShield AI — Risk Manager API"
 API_DESCRIPTION = (
-    "Defensive fraud-risk scoring API for the Razorpay AI Buildathon 2026 "
-    "(Track 02 — AI Risk Manager). Scores transactions for fraud risk, explains "
+    "Defensive fraud-risk scoring API as a final-year project "
+    "Scores transactions for fraud risk, explains "
     "the score with SHAP, and returns a bounded, rule-based recommended action. "
     "Strictly detect/flag/recommend — never performs an irreversible financial action."
 )

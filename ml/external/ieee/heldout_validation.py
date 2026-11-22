@@ -1,12 +1,12 @@
 """
-Phase 17 — Razorpay Real-Data Held-Out Validation
+Phase 17 — Real-Data Held-Out Validation
 ===================================================
 
 PURPOSE
 -------
 Produce a defensible, reproducible held-out evaluation of MerchantShield's
 fraud-detection methodology on real-world e-commerce transaction data, to
-satisfy the Razorpay AI Risk Manager track requirement:
+satisfy the project's evaluation requirement:
 
   "Build a working detector with measured precision and recall on a
    held-out test set, including false-positive cost."
@@ -14,7 +14,7 @@ satisfy the Razorpay AI Risk Manager track requirement:
 DATASET
 -------
 IEEE-CIS Fraud Detection — real e-commerce chargeback data from Vesta
-Corporation, released via Kaggle (2019). This is NOT Razorpay transaction
+Corporation, released via Kaggle (2019). This is NOT production transaction
 data; it is real-world card-not-present e-commerce fraud data.
 Labels represent confirmed chargebacks (isFraud=1).
 
@@ -75,7 +75,7 @@ COST MODEL
 Inherits CostAssumptions: fp_cost=50 (cost units), fn_cost_fraction=0.5.
 IEEE-CIS amounts are USD; the original model used INR. Cost figures are
 reported as "cost units" — absolute values are not comparable across datasets.
-The fp_cost=50 is an assumed illustrative value, not a measured Razorpay figure.
+The fp_cost=50 is an assumed illustrative value, not a measured production figure.
 
 SCIENTIFIC INTEGRITY
 --------------------
@@ -124,7 +124,7 @@ _DEFAULT_DATA_DIR = r"C:\Users\user\Downloads\ieee_cis_inspect"
 IEEE_DATA_DIR = os.environ.get("IEEE_DATA_DIR", _DEFAULT_DATA_DIR)
 
 RESULTS_DIR = os.path.join(_ROOT, "ml", "external", "ieee", "results")
-RESULTS_PATH = os.path.join(RESULTS_DIR, "phase17_razorpay_results.json")
+RESULTS_PATH = os.path.join(RESULTS_DIR, "phase17_heldout_results.json")
 MODEL_PATH   = os.path.join(RESULTS_DIR, "phase17_lgbm.pkl")
 
 # Phase 17 feature set: base 15 + card_product_share (Phase 15 winner)
@@ -253,7 +253,7 @@ def run_phase17(*, verbose: bool = True) -> dict:
 
     if verbose:
         print(f"\n{'='*70}")
-        print("PHASE 17 — RAZORPAY REAL-DATA HELD-OUT VALIDATION")
+        print("PHASE 17 — REAL-DATA HELD-OUT VALIDATION")
         print(f"{'='*70}")
         print(f"[p17] Data directory:  {IEEE_DATA_DIR}")
         print(f"[p17] Feature set:     {len(P17_FEATURES)} features "
@@ -426,7 +426,7 @@ def run_phase17(*, verbose: bool = True) -> dict:
 
     elapsed = time.time() - t0
     results = {
-        "experiment": "phase17_razorpay_validation",
+        "experiment": "phase17_heldout_validation",
         "description": (
             "Real-data held-out validation on IEEE-CIS fraud data. "
             "16 features (15 base + card_product_share). "
@@ -437,7 +437,7 @@ def run_phase17(*, verbose: bool = True) -> dict:
             "type": "real_world_ecommerce_chargebacks",
             "not_committed_to_git": True,
             "note": (
-                "This is NOT Razorpay data. It is real e-commerce card-not-present "
+                "This is NOT production merchant data. It is real e-commerce card-not-present "
                 "fraud from a US payment processor. Labels = confirmed chargebacks."
             ),
         },
@@ -493,7 +493,7 @@ def run_phase17(*, verbose: bool = True) -> dict:
             "fn_cost_fraction": float(COST.fn_cost_fraction),
             "currency_note": (
                 "IEEE-CIS amounts are USD. fp_cost=50 is an illustrative "
-                "assumption, not a measured Razorpay value."
+                "assumption, not a measured production value."
             ),
         },
         "threshold_selection": {
@@ -532,7 +532,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description=(
-            "Phase 17 — Razorpay real-data held-out validation. "
+            "Phase 17 — real-data held-out validation. "
             "Reads data from IEEE_DATA_DIR env variable "
             f"(default: {_DEFAULT_DATA_DIR})."
         )
@@ -551,7 +551,7 @@ if __name__ == "__main__":
     if args.data_dir:
         os.environ["IEEE_DATA_DIR"] = args.data_dir
         # re-resolve module-level variable after env override
-        import ml.external.ieee.razorpay_validation as _self
+        import ml.external.ieee.heldout_validation as _self
         _self.IEEE_DATA_DIR = args.data_dir
 
     run_phase17(verbose=not args.quiet)

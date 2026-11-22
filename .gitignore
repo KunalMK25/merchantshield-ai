@@ -34,6 +34,9 @@ train_transaction.csv
 train_identity.csv
 test_transaction.csv
 test_identity.csv
-# Phase 17 model artifact (reproducible by re-running razorpay_validation.py)
+# Phase 17 model artifact (reproducible by re-running heldout_validation.py)
 phase17_lgbm.pkl
-phase17_razorpay_results.json
+phase17_heldout_results.json
+
+# local virtualenv
+.venv/

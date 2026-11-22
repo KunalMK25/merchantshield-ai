@@ -1,5 +1,5 @@
 """
-Tests for ml/external/ieee/razorpay_validation.py — Phase 17.
+Tests for ml/external/ieee/heldout_validation.py — Phase 17.
 
 DESIGN
 ------
@@ -57,7 +57,7 @@ _requires_data = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Imports from the module under test
 # ---------------------------------------------------------------------------
-from ml.external.ieee.razorpay_validation import (
+from ml.external.ieee.heldout_validation import (
     _check_data_available,
     _score_at,
     _val_sweep,
@@ -82,7 +82,7 @@ class TestDataAvailabilityGuard:
     def test_missing_txn_raises_with_download_instructions(self, tmp_path):
         """FileNotFoundError must include Kaggle URL and IEEE_DATA_DIR usage."""
         os.environ["IEEE_DATA_DIR"] = str(tmp_path)
-        import ml.external.ieee.razorpay_validation as rv
+        import ml.external.ieee.heldout_validation as rv
         original = rv.IEEE_DATA_DIR
         rv.IEEE_DATA_DIR = str(tmp_path)
         try:
@@ -102,7 +102,7 @@ class TestDataAvailabilityGuard:
         txn.write_text("TransactionID,isFraud,TransactionDT,TransactionAmt,"
                        "ProductCD,card1,addr1,D1,D11\n"
                        "1,0,86400,100.0,W,1234,200.0,0.0,30.0\n")
-        import ml.external.ieee.razorpay_validation as rv
+        import ml.external.ieee.heldout_validation as rv
         original = rv.IEEE_DATA_DIR
         rv.IEEE_DATA_DIR = str(tmp_path)
         try:
@@ -415,7 +415,7 @@ class TestResultsSchema:
     @pytest.fixture
     def results(self):
         if not os.path.exists(RESULTS_PATH):
-            pytest.skip("Phase 17 results JSON not yet generated — run razorpay_validation.py first")
+            pytest.skip("Phase 17 results JSON not yet generated — run heldout_validation.py first")
         with open(RESULTS_PATH) as f:
             return json.load(f)
 
@@ -493,7 +493,7 @@ class TestIntegrationFullPipeline:
     @_integration
     def test_pipeline_completes_without_error(self, tmp_path):
         """Full Phase 17 pipeline runs end-to-end and produces valid results."""
-        import ml.external.ieee.razorpay_validation as rv
+        import ml.external.ieee.heldout_validation as rv
         original_results = rv.RESULTS_PATH
         original_model   = rv.MODEL_PATH
         # Redirect outputs to tmp_path so we don't overwrite real results
@@ -502,7 +502,7 @@ class TestIntegrationFullPipeline:
         try:
             results = rv.run_phase17(verbose=False)
             # Basic sanity on returned dict
-            assert results["experiment"] == "phase17_razorpay_validation"
+            assert results["experiment"] == "phase17_heldout_validation"
             assert results["model"]["production_model_untouched"] is True
             tr = results["test_results"]
             assert tr["roc_auc"] > 0.5, "ROC-AUC must be above random"

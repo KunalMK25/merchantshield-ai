@@ -23,7 +23,7 @@ For the project overview, quick-start, and results summary see the root
 |---|---|
 | [external_validation_ieee_cis.md](external_validation_ieee_cis.md) | IEEE-CIS dataset provenance, licensing, feature mapping (active/degraded/inert), Experiment A (frozen transfer — fails), Experiment B (retrained — PARTIAL TRANSFER), Phase 14 root-cause analysis |
 | [phase15_card_product_experiment.md](phase15_card_product_experiment.md) | card_product_share feature, leakage proof (35 tests), ablation results (5 variants), test-set evaluation, KEEP/REJECT decision |
-| [phase17_razorpay_real_data_validation.md](phase17_razorpay_real_data_validation.md) | **Canonical held-out evaluation.** Phase 17 results on real IEEE-CIS data: ROC-AUC 0.771, recall 79.8%, precision 6.3% at threshold 0.35. Razorpay objective assessment. Full comparison table (Phases 14–17). |
+| [phase17_heldout_real_data_validation.md](phase17_heldout_real_data_validation.md) | **Canonical held-out evaluation.** Phase 17 results on real IEEE-CIS data: ROC-AUC 0.771, recall 79.8%, precision 6.3% at threshold 0.35. Objective assessment. Full comparison table (Phases 14–17). |
 
 ---
 
@@ -35,7 +35,7 @@ For the project overview, quick-start, and results summary see the root
 4. `docs/api.md` — the full API contract
 5. `docs/external_validation_ieee_cis.md` — honest external validation story (Phases 14–15)
 6. `docs/phase15_card_product_experiment.md` — the targeted improvement experiment
-7. `docs/phase17_razorpay_real_data_validation.md` — canonical real-data held-out evaluation
+7. `docs/phase17_heldout_real_data_validation.md` — canonical real-data held-out evaluation
 
 ---
 
