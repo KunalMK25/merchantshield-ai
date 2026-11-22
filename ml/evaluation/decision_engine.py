@@ -19,7 +19,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from ml.evaluation.policy import evaluate_policy, DECISION_THRESHOLD
+from ml.evaluation.policy import evaluate_policy, evaluate_policy_at, DECISION_THRESHOLD
 from ml.evaluation.risk_scoring import score_transaction
 
 MODEL_VERSION = "lgbm_v1"  # matches ml/models/candidate_lgbm_v1.pkl, frozen since Phase 4/5
@@ -85,6 +85,8 @@ def make_decision(
     amount: float,
     model_explanation: Optional[list] = None,
     timestamp: Optional[str] = None,
+    decision_threshold: Optional[float] = None,
+    model_version: Optional[str] = None,
 ) -> DecisionRecord:
     """
     Produces a complete, structured, reproducible decision record.
@@ -103,15 +105,22 @@ def make_decision(
 
     # THE action-determining call. Only (probability, amount) go in.
     # model_explanation is deliberately not passed to evaluate_policy at all.
-    rule = evaluate_policy(probability, amt)
+    # With no champion override this is exactly the frozen policy; a promoted model
+    # supplies its own cost-optimal flag threshold and version label.
+    if decision_threshold is None or decision_threshold == DECISION_THRESHOLD:
+        threshold = DECISION_THRESHOLD
+        rule = evaluate_policy(probability, amt)
+    else:
+        threshold = float(decision_threshold)
+        rule = evaluate_policy_at(probability, amt, threshold)
 
     ts = timestamp or datetime.now(timezone.utc).isoformat()
 
     return DecisionRecord(
         transaction_id=txn_id,
-        model_version=MODEL_VERSION,
+        model_version=model_version or MODEL_VERSION,
         fraud_probability=round(probability, 4),
-        threshold=DECISION_THRESHOLD,
+        threshold=threshold,
         risk_score=risk["risk_score"],
         risk_category=risk["risk_category"],
         action=rule.action,

@@ -531,10 +531,38 @@ Promotion is guarded. The winner replaces the serving model only if it is tree-b
 are explained with SHAP) and beats the incumbent's validation cost by at least 3%, with both
 re-scored on the same validation data. Every run, promotion, declined challenger and rollback is
 recorded under `ml/registry_store/` (git-ignored) and shown on the dashboard's **Model registry**
-page. The registry API (`/registry/*`) is read-only on purpose.
+page. The registry API (`/registry/*`) is read-only on purpose. See [Daily retraining](#daily-retraining) for how a promoted model reaches the API.
 
 On the repo's synthetic data XGBoost narrowly wins validation (about 2% lower cost) but is worse on
 the held-out test set, so the 3% margin correctly keeps LightGBM as champion.
+
+## Daily retraining
+
+A retraining cycle extends the data by one simulated day, retrains every candidate, and lets the
+contest winner replace the serving model only if it clearly beats it.
+
+```bash
+python -m ml.retrain.job                      # one cycle: new day, retrain, maybe promote
+python -m ml.retrain.job --days 3             # catch up several days
+python -m ml.retrain.job --drift amount_scale=2.5   # shift the world on purpose (for drift demos)
+```
+
+- **New data mirrors the demo data.** Customers and merchants are fitted from the existing history
+  (home region, devices, spend level, activity rate), then simulated forward with the same fraud
+  episode patterns. A test checks that a generated day matches the history's volume, fraud rate and
+  device/region novelty. Daily batches are stored under `ml/data_store/` (git-ignored).
+- **Rolling split.** The latest 10 days are held out for testing and the 10 before for validation.
+  On the original 60 days this reproduces the project's train/validation/test boundaries exactly.
+- **Scheduling.** Cron: `0 2 * * * cd /path/to/merchantshield-ai && .venv/bin/python -m ml.retrain.job`.
+  Or start the API with `MS_RETRAIN_INTERVAL_HOURS=24` and it retrains itself (single process only).
+  A file lock stops two runs overlapping, and every run is logged to `ml/data_store/retrain_log.jsonl`.
+- **A promoted model serves immediately.** The API follows the registry's champion pointer and swaps
+  the model in without a restart. Each model keeps its own cost-optimal threshold, which now drives
+  the flag boundary and the decision record (the frozen policy is unchanged for `lgbm_v1`). If a new
+  champion's file cannot be loaded, the previous model keeps serving.
+- **Not a retraining guarantee.** Promotion compares models on a validation window that moves every
+  day, so day-to-day noise can exceed the 3% margin and the champion may change on consecutive days.
+  Raise `--margin` or add a cooldown if that churn is unwanted.
 
 ## Limitations / prototype scope
 

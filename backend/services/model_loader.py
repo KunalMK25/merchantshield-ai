@@ -16,6 +16,7 @@ import os
 import joblib
 
 from ml.evaluation.explainability import RiskExplainer
+from ml.evaluation.policy import DECISION_THRESHOLD
 
 
 class ModelUnavailableError(RuntimeError):
@@ -30,6 +31,8 @@ class ModelBundle:
         self.explainer = explainer
         self.metadata = metadata
         self.model_path = model_path
+        # The flag boundary this model was tuned for (0.40 for the frozen lgbm_v1).
+        self.decision_threshold = float(metadata.get("selected_threshold", DECISION_THRESHOLD))
 
 
 def load_model_bundle(model_path: str, metadata_path: str) -> ModelBundle:

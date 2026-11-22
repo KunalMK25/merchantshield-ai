@@ -14,12 +14,20 @@ from ml.features.build_features import FEATURE_COLUMNS
 router = APIRouter()
 
 
+def current_bundle(request: Request):
+    """The serving bundle, after a cheap check for a newly promoted champion."""
+    provider = getattr(request.app.state, "model_provider", None)
+    if provider is not None:
+        provider.refresh(request.app)
+    return getattr(request.app.state, "model_bundle", None)
+
+
 @router.get("/health", response_model=HealthResponse, tags=["ops"],
             summary="Liveness/readiness check",
             description="Returns whether the API process is up and whether the frozen "
                         "LightGBM model was loaded successfully at startup.")
 def health(request: Request):
-    bundle = getattr(request.app.state, "model_bundle", None)
+    bundle = current_bundle(request)
     return HealthResponse(
         status="ok" if bundle is not None else "degraded",
         model_loaded=bundle is not None,
@@ -33,7 +41,7 @@ def health(request: Request):
                         "and the validation/test metrics recorded when the threshold was selected "
                         "(Phase 5). This is read-only, static metadata -- it does not run inference.")
 def model_info(request: Request):
-    bundle = getattr(request.app.state, "model_bundle", None)
+    bundle = current_bundle(request)
     if bundle is None:
         raise HTTPException(status_code=503, detail="Model is not loaded; service is degraded.")
     meta = bundle.metadata
@@ -49,7 +57,7 @@ def model_info(request: Request):
 
 
 def _get_bundle_or_503(request: Request):
-    bundle = getattr(request.app.state, "model_bundle", None)
+    bundle = current_bundle(request)
     if bundle is None:
         raise HTTPException(status_code=503, detail="Model is not loaded; service is degraded.")
     return bundle

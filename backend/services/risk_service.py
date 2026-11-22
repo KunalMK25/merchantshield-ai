@@ -229,7 +229,7 @@ def explain_only(bundle: ModelBundle, request: RiskRequest) -> dict:
     is_cold_start = len(request.prior_transactions) == 0
 
     explanation = build_explanation_text(
-        result, decision_threshold=DECISION_THRESHOLD, is_cold_start=is_cold_start
+        result, decision_threshold=bundle.decision_threshold, is_cold_start=is_cold_start
     )
 
     # For cold-start, filter contributions to exclude history-dependent features
@@ -289,6 +289,8 @@ def evaluate_full(bundle: ModelBundle, request: RiskRequest):
         model_probability=probability,
         amount=request.transaction.amount,
         model_explanation=None,  # Will be filled in after SHAP attempt
+        decision_threshold=bundle.decision_threshold,
+        model_version=bundle.metadata.get("model_name"),
     )
 
     # Attempt SHAP explanation, but it's not required for the decision
@@ -303,7 +305,7 @@ def evaluate_full(bundle: ModelBundle, request: RiskRequest):
         is_cold_start = prior_txn_count == 0
 
         explanation = build_explanation_text(
-            result, decision_threshold=DECISION_THRESHOLD, is_cold_start=is_cold_start
+            result, decision_threshold=bundle.decision_threshold, is_cold_start=is_cold_start
         )
         explanation["reasons"] = explanation.get("reasons", [])
 
@@ -313,6 +315,8 @@ def evaluate_full(bundle: ModelBundle, request: RiskRequest):
             model_probability=probability,
             amount=request.transaction.amount,
             model_explanation=explanation.get("reasons", []),
+            decision_threshold=bundle.decision_threshold,
+            model_version=bundle.metadata.get("model_name"),
         )
     except Exception as e:
         # SHAP failed, but decision is still valid

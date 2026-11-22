@@ -28,11 +28,16 @@ MARKS:
 
 import os
 import sys
+import tempfile
 
 import joblib
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+
+# Hermetic serving: the API tests must always start from the frozen lgbm_v1, never from
+# whatever champion a local retraining run has promoted into ml/registry_store.
+os.environ.setdefault("MS_REGISTRY_DIR", tempfile.mkdtemp(prefix="ms_test_registry_"))
 
 # Ensure the project root (parent of tests/) is on sys.path so that
 # `from ml.x import y` and `from backend.x import y` resolve correctly

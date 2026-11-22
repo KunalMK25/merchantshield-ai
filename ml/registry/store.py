@@ -106,7 +106,7 @@ class ModelRegistry:
             raise RegistryError(f"No model {name!r} in run {run_id!r}")
         return joblib.load(f)
 
-    def import_existing(self, model_path, name, tree_based, threshold, val_metrics, note=""):
+    def import_existing(self, model_path, name, tree_based, threshold, val_metrics, note="", metadata=None):
         """Register an already-trained artifact (e.g. the original lgbm_v1) as a run."""
         n = len(self.list_runs()) + 1
         run_id = f"run_import_{n:04d}"
@@ -116,6 +116,8 @@ class ModelRegistry:
         entry = {"name": name, "tree_based": tree_based, "train_seconds": None,
                  "val": {**val_metrics, "threshold": threshold, "recall_constraint_met": True},
                  "test": None}
+        if metadata is not None:
+            entry["metadata"] = metadata   # served as-is, so the original model keeps its label
         record = {"run_id": run_id, "created_at": _now(), "data_note": note,
                   "winner": name, "candidates": [entry]}
         (run_dir / "run.json").write_text(json.dumps(_clean(record), indent=2))

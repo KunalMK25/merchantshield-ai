@@ -9,6 +9,7 @@ import ErrorBanner from "./components/ErrorBanner";
 import Sidebar from "./components/Sidebar";
 import StatCard from "./components/StatCard";
 import RegistryPage from "./components/RegistryPage";
+import RetrainPage from "./components/RetrainPage";
 import { useTheme } from "./hooks/useTheme";
 import "./styles/App.css";
 
@@ -126,7 +127,7 @@ export default function App() {
       <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} />
 
       <main className="main-col">
-        {view !== "registry" && (
+        {view !== "registry" && view !== "retrain" && (
         <div className="stat-row">
           <StatCard label="Model" value={modelVersion} hint="Active classifier" />
           <StatCard label="Threshold" value={threshold} hint="Cost-optimised cut-off" />
@@ -190,6 +191,7 @@ export default function App() {
           </>
         )}
         {view === "registry" && <RegistryPage />}
+        {view === "retrain" && <RetrainPage />}
       </main>
     </div>
   );

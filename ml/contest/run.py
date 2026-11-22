@@ -37,7 +37,8 @@ def bootstrap_champion(registry: ModelRegistry):
     metrics = dict(meta["validation_metrics_at_threshold"])
     metrics["cost"] = metrics.pop("total_cost")
     run_id = registry.import_existing(LGBM_V1, "lightgbm", True, meta["selected_threshold"], metrics,
-                                      note="Original frozen model imported as the starting champion")
+                                      note="Original frozen model imported as the starting champion",
+                                      metadata=meta)
     registry.promote(run_id, "lightgbm", reason="Original frozen model lgbm_v1 (starting champion).")
 
 

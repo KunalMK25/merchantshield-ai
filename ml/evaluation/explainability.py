@@ -15,6 +15,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import shap
+from sklearn.ensemble import RandomForestClassifier
 
 from ml.features.build_features import FEATURE_COLUMNS
 
@@ -85,6 +86,9 @@ class RiskExplainer:
     def __init__(self, model):
         self.model = model
         self.explainer = shap.TreeExplainer(model)
+        # Boosters explain in log-odds space; a random forest averages probabilities,
+        # so its SHAP values live in probability space.
+        self._probability_space = isinstance(model, RandomForestClassifier)
 
     def explain(self, feature_row: pd.Series, top_k: int = 5) -> dict:
         """
@@ -134,16 +138,25 @@ class RiskExplainer:
                 else self.explainer.expected_value
             )
         else:
-            # current SHAP 0.52: plain ndarray (n_samples, n_features); index [0] = first row
-            sv = np.asarray(shap_out[0])
+            arr = np.asarray(shap_out)
             base_value = self.explainer.expected_value
-            if isinstance(base_value, (list, np.ndarray)):
-                base_value = base_value[-1]
+            if arr.ndim == 3:
+                # (n_samples, n_features, n_classes), e.g. random forest: positive class, first row
+                sv = arr[0, :, 1]
+                base_value = np.asarray(base_value).ravel()[1]
+            else:
+                # current SHAP 0.52: plain ndarray (n_samples, n_features); index [0] = first row
+                sv = arr[0]
+                if isinstance(base_value, (list, np.ndarray)):
+                    base_value = base_value[-1]
 
         # --- consistency check: base_value + sum(shap) should reconstruct the model's
         #     raw margin output (log-odds), which sigmoid-transforms to raw_prob.
         margin_from_shap = float(base_value) + float(np.sum(sv))
-        reconstructed_prob = 1.0 / (1.0 + np.exp(-margin_from_shap))
+        if self._probability_space:
+            reconstructed_prob = margin_from_shap
+        else:
+            reconstructed_prob = 1.0 / (1.0 + np.exp(-margin_from_shap))
         additivity_ok = abs(reconstructed_prob - raw_prob) < 1e-4
 
         contributions = []

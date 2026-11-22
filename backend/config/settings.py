@@ -15,7 +15,10 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)  # merchantshield-ai/
 MODEL_PATH = os.path.join(PROJECT_ROOT, "ml", "models", "candidate_lgbm_v1.pkl")
 MODEL_METADATA_PATH = os.path.join(PROJECT_ROOT, "ml", "models", "lgbm_v1_metadata.json")
 
-REGISTRY_DIR = os.path.join(PROJECT_ROOT, "ml", "registry_store")
+REGISTRY_DIR = os.environ.get("MS_REGISTRY_DIR", os.path.join(PROJECT_ROOT, "ml", "registry_store"))
+DATA_STORE_DIR = os.environ.get("MS_DATA_STORE_DIR", os.path.join(PROJECT_ROOT, "ml", "data_store"))
+# Hours between automatic retraining runs inside the API process; unset/0 = disabled (use cron instead).
+RETRAIN_INTERVAL_HOURS = float(os.environ.get("MS_RETRAIN_INTERVAL_HOURS", "0") or 0)
 
 AUDIT_DB_DIR = os.path.join(PROJECT_ROOT, "backend", "data")
 AUDIT_DB_PATH = os.path.join(AUDIT_DB_DIR, "audit.db")

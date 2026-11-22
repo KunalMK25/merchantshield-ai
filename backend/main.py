@@ -25,7 +25,9 @@ from backend.services.model_loader import load_model_bundle, ModelUnavailableErr
 from backend.services.audit_service import AuditStore
 from backend.api.routes import router
 from backend.api.registry_routes import router as registry_router
+from backend.api.retrain_routes import router as retrain_router
 from ml.registry.store import ModelRegistry
+from backend.services.model_provider import ModelProvider
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("merchantshield")
@@ -34,13 +36,28 @@ logger = logging.getLogger("merchantshield")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        app.state.model_bundle = load_model_bundle(settings.MODEL_PATH, settings.MODEL_METADATA_PATH)
-        logger.info(f"Model loaded from {settings.MODEL_PATH}")
-    except ModelUnavailableError as e:
-        # Do not crash the process -- come up degraded so /health reports it clearly
-        # rather than every deploy tool seeing an opaque process crash.
-        logger.error(f"MODEL FAILED TO LOAD: {e}")
-        app.state.model_bundle = None
+        app.state.registry = ModelRegistry(settings.REGISTRY_DIR)
+    except Exception as e:
+        logger.error(f"MODEL REGISTRY UNAVAILABLE: {e}")
+        app.state.registry = None
+
+    app.state.model_bundle = None
+    app.state.model_provider = None
+    if app.state.registry is not None:
+        app.state.model_provider = ModelProvider(app.state.registry)
+        app.state.model_bundle = app.state.model_provider.initial_bundle()
+        if app.state.model_bundle is not None:
+            logger.info(f"Serving registry champion {app.state.model_bundle.metadata.get('model_name')}")
+
+    if app.state.model_bundle is None:
+        try:
+            app.state.model_bundle = load_model_bundle(settings.MODEL_PATH, settings.MODEL_METADATA_PATH)
+            logger.info(f"Model loaded from {settings.MODEL_PATH}")
+        except ModelUnavailableError as e:
+            # Do not crash the process -- come up degraded so /health reports it clearly
+            # rather than every deploy tool seeing an opaque process crash.
+            logger.error(f"MODEL FAILED TO LOAD: {e}")
+            app.state.model_bundle = None
 
     try:
         app.state.audit_store = AuditStore(settings.AUDIT_DB_URL, settings.AUDIT_DB_DIR)
@@ -49,13 +66,23 @@ async def lifespan(app: FastAPI):
         logger.error(f"AUDIT STORE FAILED TO INITIALIZE: {e}")
         app.state.audit_store = None
 
-    try:
-        app.state.registry = ModelRegistry(settings.REGISTRY_DIR)
-    except Exception as e:
-        logger.error(f"MODEL REGISTRY UNAVAILABLE: {e}")
-        app.state.registry = None
+    app.state.retrain_data_dir = settings.DATA_STORE_DIR
+    app.state.retrain_scheduler = None
+    if settings.RETRAIN_INTERVAL_HOURS > 0:
+        from ml.retrain.job import RetrainConfig, run_daily_job
+        from ml.retrain.scheduler import RetrainScheduler
+        scheduler = RetrainScheduler(
+            lambda: run_daily_job(RetrainConfig(data_dir=settings.DATA_STORE_DIR,
+                                                registry_dir=settings.REGISTRY_DIR)),
+            interval_seconds=settings.RETRAIN_INTERVAL_HOURS * 3600)
+        scheduler.start()
+        app.state.retrain_scheduler = scheduler
+        logger.info(f"Automatic retraining every {settings.RETRAIN_INTERVAL_HOURS:g} h")
 
     yield
+
+    if app.state.retrain_scheduler is not None:
+        app.state.retrain_scheduler.stop()
 
     # no special teardown needed for sqlite/joblib-loaded objects
 
@@ -69,6 +96,7 @@ app = FastAPI(
 
 app.include_router(router)
 app.include_router(registry_router)
+app.include_router(retrain_router)
 
 # CORS is only needed when the frontend runs as a separate dev-server process
 # (`npm run dev` on a different port) against this API during development. The

@@ -65,6 +65,10 @@ export const api = {
 
   getRegistryEvents: () => request("/registry/events"),
 
+  getRetrainStatus: () => request("/retrain/status"),
+
+  getRetrainLog: (limit = 30) => request(`/retrain/log?limit=${limit}`),
+
   getAuditLog: (limit = 25) => request(`/audit-log?limit=${limit}`),
 };
 
