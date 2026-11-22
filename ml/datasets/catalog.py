@@ -33,7 +33,7 @@ DATASETS = {
         name="sparkov", title="Sparkov simulated credit-card transactions (2019 to 2020)",
         source="https://www.kaggle.com/datasets/kartik2112/fraud-detection",
         download="kaggle datasets download -d kartik2112/fraud-detection -p data/raw/sparkov --unzip",
-        files=("fraudTrain.csv", "fraudTest.csv"), size="about 500 MB unzipped, 1.3 million rows",
+        files=("fraudTrain.csv", "fraudTest.csv"), size="about 500 MB unzipped, 1.85 million rows",
         loader=lambda paths, k, seed: load_sparkov(paths, k, seed),
         notes="Best fit: about 1,000 cards with long histories and a real fraud label. No device information."),
     "tabformer": Dataset(

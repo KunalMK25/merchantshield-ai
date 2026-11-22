@@ -579,9 +579,44 @@ MS_REGISTRY_DIR=ml/workspaces/sparkov/registry_store MS_DATA_STORE_DIR=ml/worksp
 python -m ml.cases.ingest --data-dir ml/workspaces/sparkov/data_store      # queue its flagged accounts
 ```
 
-**Status, stated plainly.** The loaders are tested against small files written in each dataset's published
-column layout. They have **not** been run against the real downloads, which need a login this project does
-not use; if a real file differs, the loader names the missing column. Beyond that:
+### Result on the real Sparkov data
+
+One run of `python -m ml.datasets.evaluate sparkov` on the real download: 1,852,394 transactions, 999 cards,
+731 days, 0.52% fraud. Models train on the first 1.43 million rows, thresholds are chosen on the next 73 days,
+and the final 73 days (238,138 transactions, 651 frauds, a 0.27% base rate) are scored once. The false-positive
+cost is an assumed $3.80 (8% of the median amount); costs are in dollars.
+
+| Model | Test ROC-AUC | Test PR-AUC | Caught / missed | False alarms | Test cost |
+|---|---|---|---|---|---|
+| XGBoost | 0.989 | 0.596 | 555 / 96 | 3,578 | $19,814 |
+| LightGBM | 0.985 | 0.546 | 559 / 92 | 4,707 | $24,319 |
+| Random forest | 0.984 | 0.529 | 559 / 92 | 5,056 | $23,967 |
+| CatBoost | 0.986 | 0.518 | 564 / 87 | 5,016 | $23,965 |
+| Logistic regression | 0.922 | 0.157 | 541 / 110 | 31,832 | $127,051 |
+
+- The boosted models and the forest are close; logistic regression is far behind. The contest picked LightGBM
+  on validation cost, but XGBoost had the lowest test cost. With differences this small, treat the order among
+  the top four as noise.
+- Precision is about 10% to 13% at the operating point (recall 85% to 87%), far below the synthetic data's
+  78%. Two things drive that: the base rate is only 0.27% in the test window, and this dataset has no device
+  data, so `new_device_flag` carries no signal. The ROC-AUC of about 0.985 shows the ranking is strong.
+- **The account anomaly detector does not transfer.** On these 57,976 account-days (133 compromised) it
+  flags 351 as critical at 13% precision and 35% recall, and 5,264 in total at 2% precision. Its signals and
+  thresholds were tuned on the synthetic generator's fraud patterns; on real labels the supervised models are
+  clearly better. It would need recalibrating on this data before it deserves trust here.
+- This is one run, with an assumed cost scale, on a simulated (Sparkov-generated) dataset, not real bank data.
+
+Downloading on a network that inspects HTTPS (a corporate gateway) fails with `CERTIFICATE_VERIFY_FAILED`
+because Python does not trust the gateway's certificate. If you accept routing your Kaggle login through that
+gateway, export the macOS trusted certificates to a local file and point only the CLI at it:
+`security find-certificate -a -p /Library/Keychains/System.keychain /System/Library/Keychains/SystemRootCertificates.keychain > .venv/ca.pem`
+then `REQUESTS_CA_BUNDLE=$PWD/.venv/ca.pem kaggle datasets download ...`. Otherwise download on a personal
+device and copy the two CSV files in. Revoke the Kaggle token when you are done.
+
+**Status, stated plainly.** The Sparkov loader has been verified on the real download (the layout matched).
+The TabFormer, PaySim and IEEE-CIS loaders are tested only against small files in their published layouts and
+have **not** been run on the real downloads; if a real file differs, the loader names the missing column.
+Beyond that:
 
 - Datasets with no device or region data leave `new_device_flag` / `new_geo_flag` inert, so the models rely
   on amounts, timing, velocity and (where present) payment errors. Expect lower scores than on the
