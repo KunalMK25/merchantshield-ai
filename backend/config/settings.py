@@ -17,6 +17,9 @@ MODEL_METADATA_PATH = os.path.join(PROJECT_ROOT, "ml", "models", "lgbm_v1_metada
 
 REGISTRY_DIR = os.environ.get("MS_REGISTRY_DIR", os.path.join(PROJECT_ROOT, "ml", "registry_store"))
 DATA_STORE_DIR = os.environ.get("MS_DATA_STORE_DIR", os.path.join(PROJECT_ROOT, "ml", "data_store"))
+# Optional shared secret for analyst actions (hold/dismiss/release/close). Unset = demo mode, no token.
+ANALYST_TOKEN = os.environ.get("MS_ANALYST_TOKEN") or None
+
 # Hours between automatic retraining runs inside the API process; unset/0 = disabled (use cron instead).
 RETRAIN_INTERVAL_HOURS = float(os.environ.get("MS_RETRAIN_INTERVAL_HOURS", "0") or 0)
 

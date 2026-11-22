@@ -29,6 +29,7 @@ from typing import Optional
 
 import pandas as pd
 
+from ml.cases.store import CaseStore
 from ml.contest.candidates import CANDIDATES
 from ml.contest.run import bootstrap_champion
 from ml.contest.runner import run_contest
@@ -142,7 +143,16 @@ def _monitor(feats, sim_days, registry, data_dir, job_id) -> dict:
         f.write(json.dumps(_clean({"job_id": job_id, "at": finished, "sim_days": sim_days,
                                    "drift": drift, "anomalies": summary})) + "\n")
 
+    # Serious flags join the analyst queue. A queue failure must not lose the monitoring result
+    # (it is already on disk above), so it is reported separately.
+    alerts_created, alerts_error = None, None
+    try:
+        alerts_created = CaseStore(os.path.join(data_dir, "cases.db")).ingest(to_records(flags), job_id=job_id)
+    except Exception as e:
+        alerts_error = f"{type(e).__name__}: {e}"
+
     return {
+        "alerts_created": alerts_created, "alerts_error": alerts_error,
         "drift_status": drift["status"], "max_psi": drift["max_psi"],
         "flagged_features": [x["feature"] for x in drift["features"] if x["severity"] == "significant"],
         "score_psi": drift["score"]["psi"] if drift["score"] else None,

@@ -4,6 +4,7 @@ const ICONS = {
   registry: "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
   retrain: "M21 12a9 9 0 1 1-3-6.7 M21 4v5h-5",
   drift: "M3 12h4l3-8 4 16 3-8h4",
+  alerts: "M12 3l9 16H3L12 3z M12 10v4 M12 17h.01",
 };
 
 function Icon({ name }) {
@@ -21,9 +22,10 @@ const NAV = [
   { id: "registry", label: "Model registry", icon: "registry" },
   { id: "retrain", label: "Retraining", icon: "retrain" },
   { id: "drift", label: "Drift & anomalies", icon: "drift" },
+  { id: "alerts", label: "Alerts", icon: "alerts", badge: true },
 ];
 
-export default function Sidebar({ view, onNavigate, theme, onToggleTheme, status }) {
+export default function Sidebar({ view, onNavigate, theme, onToggleTheme, status, alertCount = 0 }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -50,6 +52,9 @@ export default function Sidebar({ view, onNavigate, theme, onToggleTheme, status
           >
             <Icon name={item.icon} />
             {item.label}
+            {item.badge && alertCount > 0 && (
+              <span className="nav-badge" aria-label={`${alertCount} open alerts`}>{alertCount}</span>
+            )}
           </button>
         ))}
       </nav>

@@ -11,6 +11,7 @@ import StatCard from "./components/StatCard";
 import RegistryPage from "./components/RegistryPage";
 import RetrainPage from "./components/RetrainPage";
 import DriftPage from "./components/DriftPage";
+import AlertsPage from "./components/AlertsPage";
 import { useTheme } from "./hooks/useTheme";
 import "./styles/App.css";
 
@@ -29,6 +30,8 @@ export default function App() {
   const [currentPayload, setCurrentPayload] = useState(null);  // V2: track payload for history visualization
   const [evaluateLoading, setEvaluateLoading] = useState(false);
   const [evaluateError, setEvaluateError] = useState(null);
+
+  const [alertCount, setAlertCount] = useState(0);
 
   const [auditEntries, setAuditEntries] = useState(null);
   const [auditLoading, setAuditLoading] = useState(true);
@@ -71,6 +74,21 @@ export default function App() {
       setAuditLoading(false);
     }
   }, []);
+
+  const loadAlertCount = useCallback(async () => {
+    try {
+      const s = await api.getCaseSummary();
+      setAlertCount((s.open_critical || 0) + (s.open_high || 0));
+    } catch {
+      /* the queue is optional; the badge simply stays hidden */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAlertCount();
+    const t = setInterval(loadAlertCount, 30000);
+    return () => clearInterval(t);
+  }, [loadAlertCount]);
 
   useEffect(() => {
     loadHealth();
@@ -125,7 +143,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} />
+      <Sidebar view={view} onNavigate={setView} theme={theme} onToggleTheme={toggle} status={status} alertCount={alertCount} />
 
       <main className="main-col">
         {view === "evaluate" || view === "monitor" ? (
@@ -194,6 +212,7 @@ export default function App() {
         {view === "registry" && <RegistryPage />}
         {view === "retrain" && <RetrainPage />}
         {view === "drift" && <DriftPage />}
+        {view === "alerts" && <AlertsPage onChanged={loadAlertCount} />}
       </main>
     </div>
   );

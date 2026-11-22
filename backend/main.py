@@ -27,6 +27,8 @@ from backend.api.routes import router
 from backend.api.registry_routes import router as registry_router
 from backend.api.retrain_routes import router as retrain_router
 from backend.api.monitoring_routes import router as monitoring_router
+from backend.api.case_routes import router as case_router
+from ml.cases.store import CaseStore
 from ml.registry.store import ModelRegistry
 from backend.services.model_provider import ModelProvider
 
@@ -68,6 +70,12 @@ async def lifespan(app: FastAPI):
         app.state.audit_store = None
 
     app.state.retrain_data_dir = settings.DATA_STORE_DIR
+    app.state.analyst_token = settings.ANALYST_TOKEN
+    try:
+        app.state.cases_store = CaseStore(os.path.join(settings.DATA_STORE_DIR, "cases.db"))
+    except Exception as e:
+        logger.error(f"CASE STORE UNAVAILABLE: {e}")
+        app.state.cases_store = None
     app.state.retrain_scheduler = None
     if settings.RETRAIN_INTERVAL_HOURS > 0:
         from ml.retrain.job import RetrainConfig, run_daily_job
@@ -99,6 +107,7 @@ app.include_router(router)
 app.include_router(registry_router)
 app.include_router(retrain_router)
 app.include_router(monitoring_router)
+app.include_router(case_router)
 
 # CORS is only needed when the frontend runs as a separate dev-server process
 # (`npm run dev` on a different port) against this API during development. The

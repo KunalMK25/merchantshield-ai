@@ -20,9 +20,10 @@ class ApiError extends Error {
 async function request(path, options = {}) {
   let response;
   try {
+    const { headers, ...rest } = options;
     response = await fetch(`${BASE_URL}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
+      headers: { "Content-Type": "application/json", ...(headers || {}) },
+      ...rest,
     });
   } catch (networkErr) {
     // fetch itself threw -- backend unreachable (down, CORS, DNS, etc.)
@@ -44,6 +45,20 @@ async function request(path, options = {}) {
 
   return body;
 }
+
+// Analyst identity lives in this browser only. The token is sent only with actions that change
+// something, and only if the person typed one in.
+const ANALYST_TOKEN_KEY = "ms-analyst-token";
+function analystHeaders() {
+  try {
+    const t = window.localStorage.getItem(ANALYST_TOKEN_KEY);
+    return t ? { "X-Analyst-Token": t } : {};
+  } catch {
+    return {};
+  }
+}
+const act = (path, body) =>
+  request(path, { method: "POST", headers: analystHeaders(), body: JSON.stringify(body) });
 
 export const api = {
   getHealth: () => request("/health"),
@@ -77,6 +92,24 @@ export const api = {
     const q = severities.map((s) => `severity=${s}`).join("&");
     return request(`/monitoring/anomalies/latest${q ? `?${q}` : ""}`);
   },
+
+  getCaseSummary: () => request("/cases/summary"),
+
+  getCaseAlerts: (status) => request(`/cases/alerts${status ? `?status=${status}` : ""}`),
+
+  getCaseAlert: (id) => request(`/cases/alerts/${id}`),
+
+  getCaseAccounts: (status) => request(`/cases/accounts${status ? `?status=${status}` : ""}`),
+
+  getCaseEvents: (limit = 40) => request(`/cases/events?limit=${limit}`),
+
+  holdAlert: (id, body) => act(`/cases/alerts/${id}/hold`, body),
+
+  dismissAlert: (id, body) => act(`/cases/alerts/${id}/dismiss`, body),
+
+  releaseAccount: (customerId, body) => act(`/cases/accounts/${encodeURIComponent(customerId)}/release`, body),
+
+  closeAccount: (customerId, body) => act(`/cases/accounts/${encodeURIComponent(customerId)}/close`, body),
 
   getAuditLog: (limit = 25) => request(`/audit-log?limit=${limit}`),
 };

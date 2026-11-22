@@ -604,6 +604,40 @@ python -m ml.retrain.job --drift amount_scale=2.5   # inject a spending shift an
 python -m ml.retrain.job --drift fraud_rate_multiplier=40   # inject a fraud surge
 ```
 
+## Alerts and account holds
+
+Critical and high flags from the monitoring become alerts in an analyst queue (watch-level flags stay
+on the drift page so the queue is not flooded). The page is **Alerts** in the dashboard.
+
+**The system only recommends.** Monitoring creates alerts and never touches an account. An account changes
+state only through an explicit action by a named person, and every action is recorded:
+
+```
+active --place hold--> held --release--> active
+                       held --close----> closed (final)
+```
+
+- An analyst reviews an alert, sees the plain-language reasons, and either places a temporary hold or
+  dismisses it as a false alarm.
+- A held account can be released, or closed. Closing needs a hold first, so it is always a second,
+  deliberate step, and release and close both require a written reason.
+- A hold, release or close produces a **customer notice** (for example "we have temporarily blocked your
+  account and our team will call you shortly"). Notices are generated and stored but never sent, and
+  they deliberately say nothing about how the activity was detected.
+- Each action, its analyst, note and timestamp go into an audit trail, and each decision is applied in a
+  single database transaction with its notice and events, so a failure cannot leave a half-applied hold.
+- An alert can only be decided once, a closed account cannot be held again, and a second alert on an
+  already-held account confirms it without sending a second notice.
+
+```bash
+python -m ml.cases.ingest            # queue flags from days that ran before the queue existed
+```
+
+**Access.** The prototype has no login. Reading is open. Actions need an analyst name and, if the server is
+started with `MS_ANALYST_TOKEN=...`, a matching `X-Analyst-Token` header (the Alerts page has a field for
+it). Without that variable anyone who can reach the API can act, so set it before exposing this anywhere.
+Everything is simulated: there is no real account or customer behind a customer id.
+
 ## Limitations / prototype scope
 
 - **Synthetic data only for production model.** All MerchantShield v1 metrics are on
