@@ -22,10 +22,15 @@ class Dataset:
     title: str
     source: str                      # where to get it
     download: str                    # a command the user runs themselves
-    files: tuple                     # glob patterns; the first is required, the rest optional
+    primary: tuple                   # glob patterns for THE data file: the first pattern that matches is used
     loader: Callable                 # (paths, max_customers, seed) -> (raw, notes)
+    optional: tuple = ()             # extra files that are loaded if present (for example a test split)
     notes: str = ""
     size: str = ""
+
+    @property
+    def files(self) -> tuple:
+        return self.primary + self.optional
 
 
 DATASETS = {
@@ -33,21 +38,26 @@ DATASETS = {
         name="sparkov", title="Sparkov simulated credit-card transactions (2019 to 2020)",
         source="https://www.kaggle.com/datasets/kartik2112/fraud-detection",
         download="kaggle datasets download -d kartik2112/fraud-detection -p data/raw/sparkov --unzip",
-        files=("fraudTrain.csv", "fraudTest.csv"), size="about 500 MB unzipped, 1.85 million rows",
+        primary=("fraudTrain.csv",), optional=("fraudTest.csv",), size="about 500 MB unzipped, 1.85 million rows",
         loader=lambda paths, k, seed: load_sparkov(paths, k, seed),
         notes="Best fit: about 1,000 cards with long histories and a real fraud label. No device information."),
     "tabformer": Dataset(
         name="tabformer", title="IBM TabFormer synthetic credit-card transactions",
         source="https://www.kaggle.com/datasets/ealtman2019/credit-card-transactions",
         download="kaggle datasets download -d ealtman2019/credit-card-transactions -p data/raw/tabformer --unzip",
-        files=("card_transaction.v1.csv",), size="about 2.3 GB, 24 million rows (use --max-customers)",
+        primary=("credit_card_transactions-ibm_v*.csv", "card_transaction.v1.csv"),
+        size="about 2.3 GB, 24 million rows (use --max-customers)",
         loader=lambda paths, k, seed: load_tabformer(paths[0], k, seed),
-        notes="Strong fit: 2,000 users, years of history, real payment errors. Very large, so sample customers."),
+        notes="History is deep (2,000 users, years of data) but, measured on the real file, fraud is only weakly visible "
+              "to this pipeline's 15 features (ROC-AUC 0.69 to 0.76): fraud rows are 61% online against 11% of "
+              "normal rows, and payment channel and merchant category are not features. Very large, so sample customers. "
+              "The download also holds a one-user sample and two files with names, addresses and card numbers; "
+              "only the transactions file is ever read."),
     "paysim": Dataset(
         name="paysim", title="PaySim synthetic mobile-money transfers",
         source="https://www.kaggle.com/datasets/ealaxi/paysim1",
         download="kaggle datasets download -d ealaxi/paysim1 -p data/raw/paysim --unzip",
-        files=("PS_*_log.csv", "paysim*.csv"), size="about 470 MB, 6.3 million rows",
+        primary=("PS_*_log.csv", "paysim*.csv"), size="about 470 MB, 6.3 million rows",
         loader=lambda paths, k, seed: load_paysim(paths[0], k),
         notes="Poor fit: nearly every origin account appears once, so there is no customer history. "
               "Loadable for completeness; prepare refuses it unless --force."),
@@ -55,7 +65,7 @@ DATASETS = {
         name="ieee", title="IEEE-CIS Fraud Detection (Vesta e-commerce chargebacks)",
         source="https://www.kaggle.com/c/ieee-fraud-detection",
         download="kaggle competitions download -c ieee-fraud-detection -p data/raw/ieee   # accept the rules on the site first",
-        files=("train_transaction.csv", "train_identity.csv"), size="about 600 MB, 590,000 rows",
+        primary=("train_transaction.csv",), optional=("train_identity.csv",), size="about 600 MB, 590,000 rows",
         loader=lambda paths, k, seed: load_ieee(paths[0].parent),
         notes="Real chargeback data. Customer identity is a card proxy, so several features are degraded (see the IEEE adapter)."),
 }
@@ -80,13 +90,13 @@ def find_files(name: str, path) -> list:
     ds, base = DATASETS[name], Path(path)
     if base.is_file():
         return [base]
-    found = [p for pattern in ds.files for p in sorted(base.glob(pattern))]
-    required = sorted(base.glob(ds.files[0])) or (sorted(base.glob(ds.files[1])) if name == "paysim" else [])
-    if not required:
+    primary = next((sorted(base.glob(pattern)) for pattern in ds.primary if sorted(base.glob(pattern))), None)
+    if not primary:
         raise DatasetError(
-            f"{ds.files[0]} not found in {base}. Download it yourself (it needs your Kaggle login, and I do not "
-            f"use unofficial mirrors):\n  {ds.download}\nSource: {ds.source}")
-    return list(dict.fromkeys(found))
+            f"{' or '.join(ds.primary)} not found in {base}. Download it yourself (it needs your Kaggle login, and I do "
+            f"not use unofficial mirrors):\n  {ds.download}\nSource: {ds.source}")
+    extras = [p for pattern in ds.optional for p in sorted(base.glob(pattern))]
+    return list(dict.fromkeys(primary[:1] + extras if name in ("tabformer", "paysim") else primary + extras))
 
 
 def main():

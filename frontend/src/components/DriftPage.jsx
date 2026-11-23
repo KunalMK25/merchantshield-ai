@@ -218,6 +218,34 @@ export default function DriftPage() {
               </div>
             </section>
 
+            {d.creep && (
+              <section className="panel">
+                <div className="panel-header">
+                  <span className="panel-title">Slow drift</span>
+                  <span className={`pill ${d.creep.status === "creeping" ? "pill-warn" : "pill-muted"}`} style={{ marginLeft: 0 }}>
+                    {d.creep.status === "insufficient_data" ? "not enough history" : d.creep.status}
+                  </span>
+                </div>
+                <div className="panel-body">
+                  <p className="page-sub" style={{ marginTop: 0 }}>
+                    The daily check judges each day against the last few weeks, so a change of a few percent a week
+                    slips through. This compares the last {d.creep.window_days} days with the {d.creep.window_days} days
+                    that ended two months earlier (four full weeks each, so the weekly cycle cancels).
+                    {d.creep.status === "insufficient_data" && " It needs about three months of history."}
+                  </p>
+                  {d.creep.features?.length > 0 && (
+                    <p className="context-note" style={{ margin: 0 }}>
+                      {d.creep.flagged_features.length
+                        ? `Shifted by 0.10 PSI or more: ${d.creep.flagged_features.join(", ")}. `
+                        : "No feature moved by 0.10 PSI or more. "}
+                      Genuine seasonal change also shows up here, for example holiday spending, until both windows lie
+                      inside the new pattern.
+                    </p>
+                  )}
+                </div>
+              </section>
+            )}
+
             {history && history.length > 0 && (
               <section className="panel">
                 <div className="panel-header">

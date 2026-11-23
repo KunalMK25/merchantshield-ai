@@ -245,6 +245,35 @@ def test_find_files_gives_actionable_errors(tmp_path):
         find_files("nope", tmp_path)
 
 
+def test_tabformer_real_download_layout_is_found_and_other_files_are_ignored(tmp_path):
+    """The real Kaggle download is credit_card_transactions-ibm_v2.csv, next to a one-user sample and two
+    files holding names, addresses and card numbers that must never be loaded."""
+    for name in ("credit_card_transactions-ibm_v2.csv", "User0_credit_card_transactions.csv",
+                 "sd254_users.csv", "sd254_cards.csv"):
+        (tmp_path / name).write_text("x")
+    found = [p.name for p in find_files("tabformer", tmp_path)]
+    assert found == ["credit_card_transactions-ibm_v2.csv"]
+
+
+def test_tabformer_older_filename_still_works(tmp_path):
+    (tmp_path / "card_transaction.v1.csv").write_text("x")
+    assert [p.name for p in find_files("tabformer", tmp_path)] == ["card_transaction.v1.csv"]
+
+
+def test_a_sample_file_alone_is_not_mistaken_for_the_dataset(tmp_path):
+    (tmp_path / "User0_credit_card_transactions.csv").write_text("x")
+    with pytest.raises(DatasetError, match="kaggle"):
+        find_files("tabformer", tmp_path)
+
+
+def test_paysim_and_ieee_primary_files_are_still_found(tmp_path):
+    (tmp_path / "PS_20174392719_1491204439457_log.csv").write_text("x")
+    assert find_files("paysim", tmp_path)[0].name.startswith("PS_")
+    (tmp_path / "train_transaction.csv").write_text("x")
+    (tmp_path / "train_identity.csv").write_text("x")
+    assert [p.name for p in find_files("ieee", tmp_path)] == ["train_transaction.csv", "train_identity.csv"]
+
+
 # ------------------------------------------------------------------- prepare
 
 def test_prepare_writes_a_workspace_with_history_and_a_replay_stream(tmp_path, sparkov):

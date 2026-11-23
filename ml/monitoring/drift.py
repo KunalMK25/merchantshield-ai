@@ -135,3 +135,52 @@ def drift_report(recent_reference, baseline_reference, current, score_reference=
     elif "moderate" in severities:
         report["status"] = "watch"
     return report
+
+
+# ------------------------------------------------------------------ slow drift
+
+CREEP_WINDOW_DAYS = 28          # four full weeks, so the weekly cycle cancels out
+CREEP_GAP_DAYS = 28             # the windows are two months apart
+CREEP_PSI = 0.10                # at tens of thousands of rows per window, noise in PSI is negligible
+MIN_CREEP_ROWS = 2000
+
+
+def creep_windows(today: int):
+    """((start, end) of the current window, (start, end) of the earlier one), in day numbers, inclusive."""
+    cur = (today - CREEP_WINDOW_DAYS + 1, today)
+    earlier_end = cur[0] - CREEP_GAP_DAYS - 1
+    return cur, (earlier_end - CREEP_WINDOW_DAYS + 1, earlier_end)
+
+
+def creep_report(feats, day, today: int) -> dict:
+    """
+    Slow-drift check, complementing the daily verdict. The daily check judges a day against the last few weeks,
+    so a change of a few percent a week is absorbed into its reference and never fires. This compares the last 28
+    days with the 28 days ending 56 days earlier. Informational: it never changes the daily verdict.
+    Cumulative features are excluded. Note it also fires on genuine seasonal change (on the real Sparkov data, the
+    holiday doubling of volume registers as creep for about two months), which is a true difference, not an error.
+    """
+    (cs, ce), (es, ee) = creep_windows(today)
+    report = {"status": "insufficient_data", "max_psi": 0.0, "features": [], "flagged_features": [],
+              "window_days": CREEP_WINDOW_DAYS, "gap_days": CREEP_GAP_DAYS, "threshold": CREEP_PSI,
+              "n_current": 0, "n_earlier": 0}
+    if es < int(day.min()):
+        return report
+    current = feats[(day >= cs) & (day <= ce)]
+    earlier = feats[(day >= es) & (day <= ee)]
+    report.update(n_current=int(len(current)), n_earlier=int(len(earlier)))
+    if len(current) < MIN_CREEP_ROWS or len(earlier) < MIN_CREEP_ROWS:
+        return report
+
+    rows = []
+    for name in DRIFT_FEATURES:
+        if name in MATURING_FEATURES:
+            continue
+        value = psi(earlier[name], current[name])
+        rows.append({"feature": name, "psi": value, "severity": "creeping" if value >= CREEP_PSI else "stable"})
+    report["features"] = rows
+    report["max_psi"] = max(r["psi"] for r in rows)
+    report["flagged_features"] = [r["feature"] for r in rows if r["severity"] == "creeping"]
+    report["status"] = "creeping" if report["flagged_features"] else "stable"
+    return report
+
