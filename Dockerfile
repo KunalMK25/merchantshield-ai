@@ -22,9 +22,8 @@
 #   ml/registry_store    model registry (contest runs, champion, history)
 #   ml/data_store        generated daily batches, retraining log, drift log, alert queue
 #
-# NOT TESTED HERE: the maintainer's machine has no Docker, so this file has been reviewed
-# (dependency wheels checked against PyPI for Python 3.13 Linux) but not built. If a build
-# fails, please open an issue.
+# VERIFIED BY CI: the maintainer's machine has no Docker, so the GitHub Actions workflow builds this image
+# and smoke-tests it on every push (see .github/workflows/ci.yml).
 #
 # Build:   docker build -t merchantshield-ai .
 # Run:     docker run -p 8000:8000 merchantshield-ai
@@ -87,15 +86,25 @@ COPY --from=builder-node /app/frontend/dist ./frontend/dist
 RUN python ml/data/generate_synthetic.py && \
     python ml/features/build_features.py
 
-# Expose the uvicorn port
+# Seed a small demo state so the registry, retraining, drift and alert pages are not empty on first view:
+# two ordinary simulated days, then one with an injected spending shift (about a minute at build time).
+# Disable with: docker build --build-arg SEED_DEMO=0 .
+ARG SEED_DEMO=1
+RUN if [ "$SEED_DEMO" = "1" ]; then \
+        python -m ml.retrain.job --models lightgbm xgboost && \
+        python -m ml.retrain.job --models lightgbm xgboost && \
+        python -m ml.retrain.job --models lightgbm xgboost --drift amount_scale=2.5 ; \
+    fi
+
+# 8000 by default. Hosts such as Render and Hugging Face Spaces choose the port and pass it as $PORT.
 EXPOSE 8000
 
 # Report unhealthy if the API stops answering (it answers /health even when degraded)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8000'), timeout=4)"
 
 # Run the FastAPI backend.
 # --host 0.0.0.0 is required inside Docker so the port is reachable from the
 # host via the -p 8000:8000 mapping; 127.0.0.1 would only be accessible inside
 # the container.
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python -m uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
