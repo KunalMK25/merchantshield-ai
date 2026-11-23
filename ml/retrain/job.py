@@ -38,7 +38,7 @@ from ml.data.daily_batch import DailyStore, DriftConfig, fit_population, simulat
 from ml.evaluation.cost_model import CostAssumptions
 from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import AnomalyConfig, AnomalyDetector, account_day_table, summarize, to_records
-from ml.monitoring.drift import MIN_REFERENCE_ROWS, drift_report
+from ml.monitoring.drift import MIN_REFERENCE_ROWS, creep_report, drift_report
 from ml.monitoring.supervised_alerts import account_day_scores, calibrate_thresholds, detect_supervised
 from ml.datasets.workspace import Workspace
 from ml.registry.store import ModelRegistry, _clean, maybe_promote
@@ -163,6 +163,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
         score_cur = model.predict_proba(cur[FEATURE_COLUMNS])[:, 1]
     drift = drift_report(recent, baseline, cur, score_ref, score_cur)
     drift["reference"] = reference_label
+    drift["creep"] = creep_report(feats, day, today=first)      # informational; never changes the daily verdict
 
     used, fallback, thresholds = "unsupervised", None, None
     flags = n_by_day = reference_rate = None
@@ -214,6 +215,7 @@ def _monitor(feats, sim_days, registry, data_dir, job_id, anomaly_config=None,
         "anomaly_quantile": anomaly_config.quantile if anomaly_config else None,
         "alert_source": used, "alert_fallback_reason": fallback, "alert_thresholds": thresholds,
         "drift_status": drift["status"], "max_psi": drift["max_psi"],
+        "creep_status": drift["creep"]["status"], "creep_flagged_features": drift["creep"]["flagged_features"],
         "flagged_features": drift["flagged_features"],
         "score_psi": drift["score"]["psi"] if drift["score"] else None,
         "accounts_checked": summary["accounts_checked"], "flagged": summary["flagged"],

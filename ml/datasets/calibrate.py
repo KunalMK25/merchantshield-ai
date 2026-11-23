@@ -18,7 +18,7 @@ import json
 
 import pandas as pd
 
-from ml.datasets.schema import profile
+from ml.datasets.schema import check_windows, profile
 from ml.datasets.workspace import DEFAULT_ROOT, Workspace
 from ml.features.build_features import build_features
 from ml.monitoring.anomaly import account_day_table, calibrate
@@ -33,6 +33,7 @@ def calibrate_workspace(ws: Workspace, val_days=None, test_days=None) -> dict:
 
     default = max(3, prof["days"] // 10)
     val_days, test_days = val_days or default, test_days or default
+    check_windows(prof["days"], val_days, test_days)
     test_start = prof["days"] - test_days
     val_start = test_start - val_days
 

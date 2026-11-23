@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.merchantshield.retrain</string>
+
+    <!-- Runs the daily retraining cycle. Filled in by scripts/install_launchd.sh. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ml.retrain.job</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__PROJECT__</string>
+
+    <!-- 02:00 every day. If the Mac is asleep then, launchd runs the job when it wakes. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__LOGDIR__/retrain.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOGDIR__/retrain.log</string>
+</dict>
+</plist>

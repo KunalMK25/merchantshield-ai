@@ -71,3 +71,12 @@ def test_an_unprepared_workspace_is_a_clear_error(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["sparkov", "--workspace-root", str(tmp_path)])
     assert "prepare" in capsys.readouterr().out
+
+
+def test_a_dataset_too_short_for_the_windows_is_a_clear_error(prepared, capsys):
+    """Validation plus test windows that leave no training days used to end in an obscure scikit-learn error."""
+    with pytest.raises(ValueError, match="spans only"):
+        evaluate_workspace(prepared, models=["logistic_regression"], val_days=60, test_days=60)
+    with pytest.raises(SystemExit):
+        main(["sparkov", "--workspace-root", str(prepared.root), "--val-days", "60", "--test-days", "60"])
+    assert "spans only" in capsys.readouterr().out

@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -65,3 +66,50 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image (includes the seeded demo state)
+        run: docker build -t merchantshield-ai .
+
+      - name: Start the container with an analyst token
+        run: docker run -d --name ms -p 8000:8000 -e MS_ANALYST_TOKEN=ci-secret merchantshield-ai
+
+      - name: Wait for the API
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf localhost:8000/health && break || sleep 3
+          done
+          curl -sf localhost:8000/health | grep -q '"model_loaded":true'
+
+      - name: Smoke test
+        run: |
+          curl -sf localhost:8000/ | grep -qi "<html"
+          curl -sf localhost:8000/model/info | grep -q decision_threshold
+          curl -sf localhost:8000/registry/runs | grep -q '"run_id"'
+          curl -sf localhost:8000/retrain/log | grep -q '"job_id"'
+          curl -sf localhost:8000/monitoring/drift/latest | grep -q '"status"'
+          curl -sf localhost:8000/cases/summary | grep -q open_alerts
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/cases/alerts/1/dismiss \
+                 -H 'content-type: application/json' -d '{"decided_by":"ci"}')
+          echo "analyst action without a token: HTTP $code"
+          test "$code" = "401"
+          echo "memory use of the serving container:"
+          docker stats --no-stream --format '{{.MemUsage}}' ms
+
+      - name: The port can be chosen by the host
+        run: |
+          docker run -d --name ms2 -p 7860:7860 -e PORT=7860 merchantshield-ai
+          for i in $(seq 1 60); do curl -sf localhost:7860/health && break || sleep 3; done
+          curl -sf localhost:7860/health | grep -q '"model_loaded":true'
+
+      - name: Container logs
+        if: always()
+        run: docker logs ms | tail -30
+

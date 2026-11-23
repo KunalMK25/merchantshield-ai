@@ -51,6 +51,14 @@ def validate_raw(df: pd.DataFrame) -> None:
         raise DatasetError("; ".join(problems))
 
 
+def check_windows(days: int, val_days: int, test_days: int) -> None:
+    """Refuse validation and test windows that leave no training days, with a message that says what to change."""
+    if val_days + test_days >= days:
+        raise DatasetError(
+            f"The data spans only {days} days, but {val_days} validation + {test_days} test days leave no days to train "
+            f"on. Use shorter windows (--val-days and --test-days) or a dataset covering more days.")
+
+
 def profile(df: pd.DataFrame) -> dict:
     """Size, history depth, which features the data leaves inert, and an honest fit rating."""
     ts = pd.to_datetime(df["timestamp"])

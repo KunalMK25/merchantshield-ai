@@ -16,7 +16,7 @@ import pandas as pd
 
 from ml.contest.runner import run_contest
 from ml.contest.selection import select_winner
-from ml.datasets.schema import profile
+from ml.datasets.schema import check_windows, profile
 from ml.datasets.workspace import DEFAULT_ROOT, Workspace
 from ml.features.build_features import FEATURE_COLUMNS, build_features
 from ml.monitoring.anomaly import SEVERITIES, AnomalyConfig, AnomalyDetector, account_day_table
@@ -78,6 +78,7 @@ def evaluate_workspace(ws: Workspace, models=None, val_days=None, test_days=None
 
     default = max(3, prof["days"] // 10)
     val_days, test_days = val_days or default, test_days or default
+    check_windows(prof["days"], val_days, test_days)
 
     calibration = ws.anomaly_calibration()
     if calibration and prof["days"] - test_days < calibration["test_start"]:

@@ -87,6 +87,11 @@ def test_the_daily_job_uses_the_workspaces_calibration(ws, tmp_path):
     assert report["monitoring"]["accounts_checked"] > 0
 
 
+def test_calibration_needs_days_left_for_training(ws):
+    with pytest.raises(ValueError, match="spans only"):
+        calibrate_workspace(ws, val_days=60, test_days=60)
+
+
 def test_the_command_summarises_the_search_and_handles_a_missing_workspace(ws, capsys, tmp_path):
     main(["sparkov", "--workspace-root", str(ws.root)])
     out = capsys.readouterr().out

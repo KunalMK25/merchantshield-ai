@@ -1,0 +1,24 @@
+# Render blueprint: a free web service built from the Dockerfile.
+# Deploy: https://dashboard.render.com -> New -> Blueprint -> pick this repository.
+#
+# Free-tier limits that shape these settings:
+#  * 512 MB of memory is not enough for in-app retraining, so it is switched off. Use a paid instance with
+#    2 GB or more and set MS_RETRAIN_INTERVAL_HOURS to 24 to turn it on.
+#  * The service sleeps when idle and its disk is erased on each restart, so the app returns to the
+#    demo state baked into the image (see SEED_DEMO in the Dockerfile).
+#  * Analyst actions (hold, dismiss, release, close) need a token, which Render generates. Read it under
+#    the service's Environment tab, and delete MS_ANALYST_TOKEN to make the demo open to anyone.
+services:
+  - type: web
+    name: merchantshield-ai
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: MS_RETRAIN_INTERVAL_HOURS
+        value: "0"
+      - key: MS_ANALYST_TOKEN
+        generateValue: true

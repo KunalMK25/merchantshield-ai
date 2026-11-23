@@ -61,7 +61,7 @@ attributed to the amount features) and **Alerts** (review a flagged account and 
 [Drift and anomalies](#drift-and-anomaly-monitoring) · [Alerts and holds](#alerts-and-account-holds) ·
 [Audit trail](#audit-trail) · [API](#api) · [Frontend](#frontend--dashboard) ·
 [Screenshots](#screenshots) · [Project structure](#project-structure) ·
-[Local setup](#local-setup--running-the-project) ·
+[Local setup](#local-setup--running-the-project) · [Deploying](#deploying) ·
 [Testing](#testing) · [Limitations](#limitations--prototype-scope)
 
 ---
@@ -451,8 +451,12 @@ python -m ml.retrain.job --drift amount_scale=2.5   # shift the world on purpose
   device/region novelty. Daily batches are stored under `ml/data_store/` (git-ignored).
 - **Rolling split.** The latest 10 days are held out for testing and the 10 before for validation.
   On the original 60 days this reproduces the project's train/validation/test boundaries exactly.
-- **Scheduling.** Cron: `0 2 * * * cd /path/to/merchantshield-ai && .venv/bin/python -m ml.retrain.job`.
-  Or start the API with `MS_RETRAIN_INTERVAL_HOURS=24` and it retrains itself (single process only).
+- **Scheduling.** Three ways, in order of how well they work: start the API with `MS_RETRAIN_INTERVAL_HOURS=24`
+  and it retrains itself (single process; this is what a deployment uses); on a Mac run
+  `scripts/install_launchd.sh`, a launchd agent that runs at 02:00 and catches up after the laptop wakes; or
+  plain cron on Linux. **Do not use cron on macOS for a project under Desktop, Documents or Downloads**: macOS
+  privacy protection makes cron fail with "Operation not permitted" when it reads those folders, silently, so the
+  nightly job never runs (verified on this project by a probe job) unless cron is given Full Disk Access.
   A file lock stops two runs overlapping, and every run is logged to `ml/data_store/retrain_log.jsonl`.
 - **A promoted model serves immediately.** The API follows the registry's champion pointer and swaps
   the model in without a restart. Each model keeps its own cost-optimal threshold, which now drives
@@ -487,12 +491,24 @@ Choices that came from measuring the data, and sometimes from getting it wrong f
 - A longer-term comparison (the 60 days before the recent window) is **shown for information and never judged**.
   When it was judged, a real two-year dataset came out "drifted" on all 30 days checked, because seasonality and
   maturing history features differ from today for reasons that are not drift. The cost: slow creep is displayed
-  but not caught.
+  but not caught by the daily verdict.
 - Comparing a single day with a mixed 14-day window made ordinary days look drifted on real data (the model's
   median score PSI was 0.11, against 0.00 for the same weekday).
 
 A normal synthetic day stays under PSI 0.07 on every feature; an injected 2.5x spending shift reads 3.2 and is
 attributed to the amount features.
+
+**Slow drift** has its own check, because the daily one absorbs a change of a few percent a week into its
+reference. It compares the last 28 days with the 28 days that ended 56 days earlier (four full weeks each, so the
+weekly cycle cancels) and flags any feature that moved by PSI 0.10 or more; at tens of thousands of rows per
+window the noise in PSI is negligible. It never changes the daily verdict, and the Drift page shows it as its own
+panel. Measured: a gradual shift of 0.5 to 0.7 standard deviations in `amount` over 60 days reads 0.13 to 0.25
+here and 0.05 to 0.08 in the daily check, which stays calm. On real Sparkov data, an amount drift injected
+gradually reached PSI 0.009 at +10%, 0.047 at +25%, 0.154 at +50% and 0.407 at +100%, so shifts under about +40%
+go unflagged. It also fires on genuine seasonal change: over the whole two years it was at or above 0.10 on 16% of
+weekly checks, almost always on `time_since_prev_txn_min` in the weeks after a real change in volume (the holiday
+doubling shows for about two months). That is a true difference between the windows, not noise, but it is not
+creep either.
 
 **Account anomalies.** Each customer-day is judged against that customer's own earlier norm, not
 against other customers. An Isolation Forest (unsupervised, fitted on earlier days only) is combined
@@ -577,7 +593,7 @@ python -m ml.retrain.job --workspace sparkov --alerts supervised   # replay the 
 | Dataset | Fit | Why |
 |---|---|---|
 | **Sparkov** (simulated cards, 2019-20) | Good | About 1,000 cards with long histories and a fraud label. No device data. |
-| **IBM TabFormer** (simulated cards) | Good | 2,000 users, years of history, real payment errors. 24 million rows: sample with `--max-customers`. |
+| **IBM TabFormer** (simulated cards) | History good, signal weak | 2,000 users and years of history, but fraud is only weakly visible to this pipeline's 15 features (ROC-AUC 0.69 to 0.76; see below). 24 million rows: sample with `--max-customers`. |
 | **IEEE-CIS** (Vesta e-commerce) | Partial | Real chargebacks, but customer identity is a card proxy, so several features are degraded (the IEEE adapter documents which). |
 | **PaySim** (mobile money) | Poor | Nearly every origin account appears once, so there is no customer history. `prepare` refuses it unless `--force`. |
 | **Bank Account Fraud** | Not integrated | It is account-opening fraud with no customer, timestamp or amount, so there is nothing for the behavioural features to use. |
@@ -693,6 +709,41 @@ Caveats, stated plainly:
   (poor) test numbers, so this is not a perfectly blind design. The final run above is the first with the
   finished design.
 
+### TabFormer on the real data
+
+`python -m ml.datasets.prepare tabformer --path data/raw/tabformer --max-customers 300` sampled 300 cards: 1,234,472
+transactions from 1991 to 2020 and 0.12% fraud. The history is deep (100% of rows have enough of it), so the
+profile rates the fit "good", but that measures history, not predictive signal. Scored once on the last 955 days
+(224,061 transactions, 175 frauds, a 0.078% base rate), the five models reach:
+
+| Model | ROC-AUC | PR-AUC | Caught / missed | False alarms |
+|---|---|---|---|---|
+| XGBoost | 0.761 | 0.0056 | 107 / 68 | 56,703 |
+| Random forest | 0.737 | 0.0030 | 110 / 65 | 74,267 |
+| CatBoost | 0.735 | 0.0042 | 114 / 61 | 68,162 |
+| Logistic regression | 0.724 | 0.0110 | 125 / 50 | 87,933 |
+| LightGBM | 0.686 | 0.0019 | 116 / 59 | 71,706 |
+
+Weak: the ranking carries some signal (2x to 14x better than chance on PR-AUC) but precision at the operating point
+is about 0.2%. The data shows why: **61% of fraud rows are online payments against 11% of normal rows**, fraud rows
+have a median amount twice the normal one and fail 2.4x as often, but the pipeline's features include none of the
+payment channel, merchant category or merchant location. Adding them is the obvious next step and is not done:
+the 15 features are fixed across the API, the frozen model and every test. The account-level alerts are poor here
+too (supervised critical tier about 2% precise). Treat this dataset as proof that the loader and the pipeline run
+end to end on 1.2 million real rows, not as a good fraud model.
+
+### PaySim on the real data
+
+`python -m ml.datasets.prepare paysim --path data/raw/paysim --max-customers 300000 --force` samples 300,000 of the 6.3
+million rows evenly at random (the first 300,000 would cover under two days, too short to split). The sample has
+**299,972 distinct accounts for 300,000 transactions**, so the "poor fit" rating is confirmed on the real file: there
+is no customer history, and the behavioural features carry nothing. The evaluation still runs, but the last three days
+hold only 3,159 transactions and 51 frauds (a 1.6% rate, because PaySim's volume falls off late in the month), so
+the numbers are noisy: XGBoost 9.5% precision at 80% recall, logistic regression 3.1% at 92%, LightGBM 2.1% at 43%.
+The models can still rank on amount and time, and PaySim's strongest signal, the account balances, is not one of
+the pipeline's features. This run is evidence for the guard that makes `prepare` refuse the dataset, not a rating of
+PaySim as a fraud model.
+
 ### Replaying 30 real days through the whole pipeline
 
 `python -m ml.retrain.job --workspace sparkov --alerts supervised --models lightgbm xgboost`, run once per day for
@@ -729,10 +780,11 @@ gateway, export the macOS trusted certificates to a local file and point only th
 then `REQUESTS_CA_BUNDLE=$PWD/.venv/ca.pem kaggle datasets download ...`. Otherwise download on a personal
 device and copy the two CSV files in. Revoke the Kaggle token when you are done.
 
-**Status, stated plainly.** The Sparkov loader has been verified on the real download (the layout matched).
-The TabFormer, PaySim and IEEE-CIS loaders are tested only against small files in their published layouts and
-have **not** been run on the real downloads; if a real file differs, the loader names the missing column.
-Beyond that:
+**Status, stated plainly.** The Sparkov, TabFormer and PaySim loaders have been run on the real downloads, and all three evaluations completed. The
+IEEE-CIS loader has not: Kaggle's competition files need a browser sign-in (`kaggle auth login`) and acceptance of
+the competition rules, which the saved dataset token cannot do. The real TabFormer download differs from what I
+first assumed in its filename (`credit_card_transactions-ibm_v2.csv`, next to a one-user sample and two files with
+names, addresses and card numbers that are never read); the columns matched exactly. Beyond that:
 
 - Datasets with no device or region data leave `new_device_flag` / `new_geo_flag` inert, so the models rely
   on amounts, timing, velocity and (where present) payment errors. Expect lower scores than on the
@@ -903,8 +955,8 @@ python ml/features/build_features.py
 
 The model lifecycle (contest, daily retraining, monitoring, alerts) is driven by
 `python -m ml.contest.run`, `python -m ml.retrain.job` and `python -m ml.cases.ingest`, described in the
-sections above. To schedule retraining, either set `MS_RETRAIN_INTERVAL_HOURS=24` when starting the API
-(single process only) or use cron:
+sections above. To schedule retraining, set `MS_RETRAIN_INTERVAL_HOURS=24` when starting the API (single
+process only), or on a Mac run `scripts/install_launchd.sh` (and `--remove` to undo it), or on Linux use cron:
 
 ```
 0 2 * * *  cd /path/to/merchantshield-ai && .venv/bin/python -m ml.retrain.job >> ml/data_store/cron.log 2>&1
@@ -945,16 +997,40 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_supervised_alerts.py`, `test_supervised_integration.py` | Account-day scores, distinct-tier thresholds, test-label immunity, job fallback and integration |
 | `test_currency_setting.py` | The dashboard's currency follows the served data |
 | `test_promotion_stability.py` | Cooldown between promotions, run counting (including imported champions), first champion never delayed |
+| `test_creep.py` | Slow-drift windows, a gradual shift the daily check misses, cumulative features excluded, job integration |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 490 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 504 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
 - Backend job (Python 3.13, ubuntu-latest): install deps → generate data → build
   features → build frontend → run full test suite
 - Frontend job (Node 22.12.0, ubuntu-latest): npm ci → npm run build
+
+## Deploying
+
+**What is verified.** On every push, GitHub builds the Docker image and smoke-tests it: the dashboard loads, the
+API answers, the registry, retraining, drift and alert pages have data (a small demo state is baked into the image),
+analyst actions return **401 without the token**, and the app honours a host-chosen `PORT`. After that smoke test the
+serving container used **187 MiB**. It has not been deployed anywhere: that needs an account only you can create.
+
+**Render (free tier), about three clicks.** `render.yaml` is a blueprint for it.
+1. On render.com choose **New, Blueprint** and pick this repository (sign in with GitHub).
+2. Render builds the image (about 10 minutes the first time: it generates the dataset and seeds the demo) and starts it.
+3. Open the URL. The analyst token Render generated is under the service's **Environment** tab as `MS_ANALYST_TOKEN`;
+   paste it into the **Token** field on the Alerts page to place a hold. Delete that variable to leave the demo open.
+
+What the free tier means: the service sleeps after about 15 minutes idle (the first request then takes up to a
+minute), its disk is erased on every restart (the app returns to the seeded demo), and **retraining is off**
+because 512 MB is too little for it. For retraining, use an instance with 2 GB or more and set
+`MS_RETRAIN_INTERVAL_HOURS=24`. If the build runs out of memory, set the default of `SEED_DEMO` in the Dockerfile to 0.
+
+**Other hosts.** The same image works on a Hugging Face Docker Space (set `PORT=7860`) and on Fly.io (which needs a
+payment card, and a volume mounted at `ml/registry_store`, `ml/data_store` and `backend/data` to keep state). Whatever
+the host: run a single worker, keep the analyst token set, and remember there is no login, the data is synthetic and
+every hold is simulated.
 
 ## Limitations / prototype scope
 
@@ -969,11 +1045,11 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
 - **Monitoring and retraining results are synthetic.** The daily data comes from a generator fitted to the
   demo data, and the anomaly detector's precision and recall measure that generator's fraud patterns, not
   real fraud. Loaders for public datasets exist (see [Real public datasets](#real-public-datasets)) but
-  have not been run against the real downloads.
+  have been run on the real downloads for Sparkov, TabFormer and PaySim, but not IEEE-CIS.
 - **The unsupervised account detector is weak on real data.** On Sparkov, even after calibration, its critical tier
   is about 13% precise on unseen days. Supervised alerts (`--alerts supervised`) reach 57% there, but need labels.
-- **Slow creep is not caught.** Drift is judged against the last weeks only; the longer comparison is displayed but
-  not judged, because on real data it flagged ordinary seasonal and maturing differences every day.
+- **Slow drift is caught only when large.** The dedicated check flags shifts of roughly +40% or more over two
+  months; smaller creep goes unnoticed, and genuine seasonal change also triggers it.
 - **Champion churn is capped, not eliminated.** A 7-run cooldown and a 10% margin cut swaps on the 30-day real
   replay from 9 to 3, but a single validation window cannot separate small real improvements from noise, so some
   remaining swaps are probably noise and some real gains wait up to a week.
@@ -996,4 +1072,5 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   no notice is ever sent.
 - **Man-in-the-middle attacks are not detected as such.** The system sees their symptoms (new devices,
   unusual amounts, drained spend), not the network attack itself.
-- **Docker not built or run.** See the note under [Local setup](#local-setup--running-the-project).
+- **Docker is verified only on GitHub's runners.** The image is built and smoke-tested there on every push; it has
+  never been run on the maintainer's machine, which has no Docker.
