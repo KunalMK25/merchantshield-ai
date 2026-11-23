@@ -58,7 +58,8 @@ class RetrainConfig:
     registry_dir: str = os.path.join(ROOT, "ml", "registry_store")
     models: Optional[list] = None      # default: every candidate
     days: int = 1                      # simulated days to add per run
-    margin: float = 0.03               # required relative cost improvement to replace the champion
+    margin: float = 0.10               # required relative cost improvement to replace the champion
+    cooldown_runs: int = 7             # daily runs a champion keeps its place after promotion
     val_days: int = 10
     test_days: int = 10
     seed: int = 42
@@ -295,7 +296,7 @@ def run_daily_job(config: RetrainConfig = None) -> dict:
             winner = select_winner(entries)
             run_id = registry.register_run(
                 entries, data_note=f"{len(raw_all):,} rows through simulated day {sim_days[-1]}")
-            decision = maybe_promote(registry, run_id, val, cost, margin=c.margin)
+            decision = maybe_promote(registry, run_id, val, cost, margin=c.margin, cooldown_runs=c.cooldown_runs)
 
             report.update(
                 status="ok", sim_days=sim_days, new_rows=len(new), cost=asdict(cost),
@@ -330,12 +331,15 @@ def main(argv=None):
                     help="where account alerts come from (supervised needs fraud labels and a champion model)")
     ap.add_argument("--days", type=int, default=1)
     ap.add_argument("--models", nargs="*")
-    ap.add_argument("--margin", type=float, default=0.03)
+    ap.add_argument("--margin", type=float, default=0.10,
+                    help="relative cost improvement a challenger needs (sized to the measured noise)")
+    ap.add_argument("--cooldown", type=int, default=7, help="daily runs a champion keeps its place (0 disables)")
     ap.add_argument("--drift", nargs="*", metavar="KEY=VALUE",
                     help="amount_scale, fraud_rate_multiplier, new_device_multiplier")
     args = ap.parse_args(argv)
     try:
-        opts = dict(days=args.days, models=args.models, margin=args.margin, drift=_parse_drift(args.drift))
+        opts = dict(days=args.days, models=args.models, margin=args.margin, cooldown_runs=args.cooldown,
+                    drift=_parse_drift(args.drift))
         if args.alerts:
             opts["alert_source"] = args.alerts
         if args.workspace:

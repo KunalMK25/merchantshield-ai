@@ -425,13 +425,14 @@ python -m ml.contest.run --rollback # restore the previous champion
 ```
 
 Promotion is guarded. The winner replaces the serving model only if it is tree-based (decisions
-are explained with SHAP) and beats the incumbent's validation cost by at least 3%, with both
+are explained with SHAP) and beats the incumbent's validation cost by at least 10% (`--margin`; see
+[Daily retraining](#daily-retraining) for why 10%), with both
 re-scored on the same validation data. Every run, promotion, declined challenger and rollback is
 recorded under `ml/registry_store/` (git-ignored) and shown on the dashboard's **Model registry**
 page. The registry API (`/registry/*`) is read-only on purpose. See [Daily retraining](#daily-retraining) for how a promoted model reaches the API.
 
 On the repo's synthetic data XGBoost narrowly wins validation (about 2% lower cost) but is worse on
-the held-out test set, so the 3% margin correctly keeps LightGBM as champion.
+the held-out test set, so the margin correctly keeps LightGBM as champion.
 
 ## Daily retraining
 
@@ -457,9 +458,18 @@ python -m ml.retrain.job --drift amount_scale=2.5   # shift the world on purpose
   the model in without a restart. Each model keeps its own cost-optimal threshold, which now drives
   the flag boundary and the decision record (the frozen policy is unchanged for `lgbm_v1`). If a new
   champion's file cannot be loaded, the previous model keeps serving.
-- **Not a retraining guarantee.** Promotion compares models on a validation window that moves every
-  day, so day-to-day noise can exceed the 3% margin and the champion may change on consecutive days.
-  Raise `--margin` or add a cooldown if that churn is unwanted.
+- **Champion churn, and what actually limits it.** Comparing a new model with the incumbent on one
+  validation window is noisy. In a simulation of two models that differ only by random seed (true saving zero),
+  the relative saving had a standard deviation of 7.8% and a 95th percentile of +15.7%, so a 3% margin promoted an
+  equivalent model on about 16% of days. Two fixes were tried and rejected: a bigger margin alone (stopping false
+  promotions below 2% needs a 20% margin, at which a clearly better challenger gets through only 13% of the
+  time), and statistical tests on the saving (a paired bootstrap, then a sign-flip permutation test; both still
+  called equivalent models significantly different on 9% to 10% of windows at a nominal 1%, because the cost
+  difference is dominated by a few rare, large missed frauds). What works is a **cooldown**: a promoted model
+  keeps its place for at least 7 daily runs (`--cooldown`), and the margin is 10%, sized to that noise. The
+  cooldown bounds swaps directly; the margin only trims the noise. The first champion is never delayed.
+  Trade-off: a genuinely better model can wait up to a week, and small real gains (under about 10%) are mostly
+  never adopted.
 
 ## Drift and anomaly monitoring
 
@@ -693,17 +703,21 @@ account-days). Only two models compete, to keep a daily run to about 15 seconds.
   daily volume roughly doubled for holiday shopping and `time_since_prev_txn_min` shifted; it settles to watch,
   then stable, as the same-weekday reference catches up. I read that as the monitor working, not misfiring.
   (My first two versions called every day, then most days, drifted; the fixes are described above.)
-- **Promotions:** the champion changed on 10 of 30 days (LightGBM and XGBoost trading places). The 3% margin does
-  not stop churn on a validation window this small and noisy.
-- **Alerts:** 139 reached the analyst queue (30 critical, 109 high), from the supervised scores after day 1 (day 1
+- **Promotions:** with a 3% margin and no cooldown the champion changed on 9 of the 30 days (LightGBM and XGBoost
+  trading places). With the cooldown and a 10% margin it changed on 3 (days 708, 717 and 724, each at least 7 days
+  apart; 24 of the 26 declines were the cooldown, 2 were the margin). That is a cap on churn, not an end to it:
+  each of those 3 swaps may still be noise, and I did not measure what the 24 blocked comparisons would have saved.
+- **Alerts:** 151 reached the analyst queue (33 critical, 118 high), from the supervised scores after day 1 (day 1
   had no champion yet, so it used the unsupervised detector). Scored against the real labels afterwards:
 
   | Tier | Alerts | Correct | Precision | Recall |
   |---|---|---|---|---|
-  | Critical | 30 | 17 | 57% | 34% |
-  | Critical + high | 139 | 27 | 19% | 54% |
+  | Critical | 33 | 16 | 48% | 32% |
+  | Critical + high | 151 | 34 | 23% | 68% |
 
-  Only 50 compromised account-days exist in this window, so these are rough estimates. Recall is lower, and the
+  Only 50 compromised account-days exist in this window, so these are rough estimates: the same replay with a
+  different sequence of champions gave 57% and 34% for the critical tier, and 19% and 54% for critical plus high,
+  which shows how much of the figure is noise. Recall is lower, and the
   wider tier less precise, than in the single big evaluation above, because the job re-chooses its thresholds every
   day from a 10-day validation window with few positives.
 - Amounts in the dashboard follow the data's currency (`$` for Sparkov; set `MS_CURRENCY_SYMBOL` to override).
@@ -930,10 +944,11 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_anomaly_calibration.py`, `test_dataset_calibration.py` | Config-driven detector, quantile thresholds, validation-only tuning, test-label immunity, overlap guard |
 | `test_supervised_alerts.py`, `test_supervised_integration.py` | Account-day scores, distinct-tier thresholds, test-label immunity, job fallback and integration |
 | `test_currency_setting.py` | The dashboard's currency follows the served data |
+| `test_promotion_stability.py` | Cooldown between promotions, run counting (including imported champions), first champion never delayed |
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 482 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 490 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:
@@ -959,8 +974,9 @@ fresh clone: install, generate the data, build the frontend, run the suite. The 
   is about 13% precise on unseen days. Supervised alerts (`--alerts supervised`) reach 57% there, but need labels.
 - **Slow creep is not caught.** Drift is judged against the last weeks only; the longer comparison is displayed but
   not judged, because on real data it flagged ordinary seasonal and maturing differences every day.
-- **Champion churn.** Promotion compares models on a validation window that moves every day, so the
-  champion can change on consecutive days even with the 3% margin. Raise the margin or add a cooldown.
+- **Champion churn is capped, not eliminated.** A 7-run cooldown and a 10% margin cut swaps on the 30-day real
+  replay from 9 to 3, but a single validation window cannot separate small real improvements from noise, so some
+  remaining swaps are probably noise and some real gains wait up to a week.
 - **No login.** The API and dashboard have no accounts. Analyst actions need a name and, only if
   `MS_ANALYST_TOKEN` is set, a shared token. Without it anyone who can reach the API can act.
 - **Single server process.** The registry, alert queue and scheduler are files and SQLite on one disk, so

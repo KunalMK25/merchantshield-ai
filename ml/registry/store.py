@@ -106,6 +106,22 @@ class ModelRegistry:
             raise RegistryError(f"No model {name!r} in run {run_id!r}")
         return joblib.load(f)
 
+    def runs_since_champion(self, run_id=None):
+        """
+        Daily runs registered after the champion's own run, counting up to `run_id` (default: the newest).
+        None if there is no champion. Ordered by creation (time, then the run's counter), not by name:
+        imported runs are named differently and would otherwise sort in the wrong place.
+        """
+        champ = self.champion()
+        if champ is None:
+            return None
+        order = sorted(self.list_runs(), key=lambda r: (r["created_at"], int(r["run_id"].rsplit("_", 1)[1])))
+        ids = [r["run_id"] for r in order]
+        if champ["run_id"] not in ids:
+            return None
+        end = ids.index(run_id) if run_id in ids else len(ids) - 1
+        return end - ids.index(champ["run_id"])
+
     def import_existing(self, model_path, name, tree_based, threshold, val_metrics, note="", metadata=None):
         """Register an already-trained artifact (e.g. the original lgbm_v1) as a run."""
         n = len(self.list_runs()) + 1
@@ -170,11 +186,17 @@ class ModelRegistry:
         return previous
 
 
-def maybe_promote(registry: ModelRegistry, run_id, val, cost, margin=0.01, min_recall=0.8):
+def maybe_promote(registry: ModelRegistry, run_id, val, cost, margin=0.01, min_recall=0.8, cooldown_runs=0):
     """
     Decide whether the best tree-based candidate of `run_id` should replace the champion.
     Both are scored on the SAME current validation frame with the same threshold rule,
     so a model trained on older data can't win or lose just because the data changed.
+
+    Churn control: a champion keeps its place for at least `cooldown_runs` daily runs after it was promoted.
+    On one validation window the relative saving of an EQUIVALENT model has a heavy right tail (95th percentile
+    +15.7%, sd 7.8%), so no margin separates small real gains from noise; a cooldown bounds the swap rate
+    directly. (A paired bootstrap and a sign-flip permutation test were tried and both still promoted
+    equivalent models on 9-10% of windows at a nominal 1%.) The first champion is never delayed.
     """
     run = registry.get_run(run_id)
     qualified = [c for c in run["candidates"]
@@ -189,6 +211,15 @@ def maybe_promote(registry: ModelRegistry, run_id, val, cost, margin=0.01, min_r
     if champ is None:
         rec = registry.promote(run_id, best["name"], reason="First champion: no incumbent to beat.")
         return {"promoted": True, "run_id": run_id, "model_name": best["name"], "reason": rec["reason"]}
+
+    if cooldown_runs:
+        age = registry.runs_since_champion(run_id)
+        if age is not None and age < cooldown_runs:
+            reason = (f"Champion {champ['model_name']} was promoted {age} run(s) ago; waiting for {cooldown_runs} "
+                      f"runs before another swap, to avoid churn.")
+            registry._event("promotion_declined", run_id=run_id, reason=reason)
+            return {"promoted": False, "run_id": run_id, "reason": reason,
+                    "cooldown": {"age": age, "required": cooldown_runs}}
 
     cand_model = registry.load_model(run_id, best["name"])
     cand_thr, cand_m = pick_threshold(y, cand_model.predict_proba(X)[:, 1], amounts, cost, min_recall)

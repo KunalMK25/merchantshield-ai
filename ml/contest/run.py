@@ -46,7 +46,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", help="subset of candidates (default: all)")
     ap.add_argument("--registry", default=DEFAULT_REGISTRY)
-    ap.add_argument("--margin", type=float, default=0.03, help="required relative cost improvement")
+    ap.add_argument("--margin", type=float, default=0.10, help="required relative cost improvement")
+    ap.add_argument("--cooldown", type=int, default=0, help="runs a champion keeps its place (0: none, for manual runs)")
     ap.add_argument("--rollback", action="store_true")
     args = ap.parse_args(argv)
 
@@ -74,7 +75,7 @@ def main(argv=None):
               f"{e['train_seconds']:>7.1f}{star}")
 
     run_id = registry.register_run(entries, data_note=f"ml/data/features.csv, {len(feats):,} rows")
-    decision = maybe_promote(registry, run_id, val, cost, margin=args.margin)
+    decision = maybe_promote(registry, run_id, val, cost, margin=args.margin, cooldown_runs=args.cooldown)
     print(f"\nrun {run_id}: {decision['reason']}")
     print("champion:", registry.champion()["model_name"], "from", registry.champion()["run_id"])
 
