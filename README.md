@@ -732,6 +732,18 @@ the 15 features are fixed across the API, the frozen model and every test. The a
 too (supervised critical tier about 2% precise). Treat this dataset as proof that the loader and the pipeline run
 end to end on 1.2 million real rows, not as a good fraud model.
 
+### PaySim on the real data
+
+`python -m ml.datasets.prepare paysim --path data/raw/paysim --max-customers 300000 --force` samples 300,000 of the 6.3
+million rows evenly at random (the first 300,000 would cover under two days, too short to split). The sample has
+**299,972 distinct accounts for 300,000 transactions**, so the "poor fit" rating is confirmed on the real file: there
+is no customer history, and the behavioural features carry nothing. The evaluation still runs, but the last three days
+hold only 3,159 transactions and 51 frauds (a 1.6% rate, because PaySim's volume falls off late in the month), so
+the numbers are noisy: XGBoost 9.5% precision at 80% recall, logistic regression 3.1% at 92%, LightGBM 2.1% at 43%.
+The models can still rank on amount and time, and PaySim's strongest signal, the account balances, is not one of
+the pipeline's features. This run is evidence for the guard that makes `prepare` refuse the dataset, not a rating of
+PaySim as a fraud model.
+
 ### Replaying 30 real days through the whole pipeline
 
 `python -m ml.retrain.job --workspace sparkov --alerts supervised --models lightgbm xgboost`, run once per day for
@@ -768,7 +780,7 @@ gateway, export the macOS trusted certificates to a local file and point only th
 then `REQUESTS_CA_BUNDLE=$PWD/.venv/ca.pem kaggle datasets download ...`. Otherwise download on a personal
 device and copy the two CSV files in. Revoke the Kaggle token when you are done.
 
-**Status, stated plainly.** The Sparkov, TabFormer and PaySim loaders have been run on the real downloads. The
+**Status, stated plainly.** The Sparkov, TabFormer and PaySim loaders have been run on the real downloads, and all three evaluations completed. The
 IEEE-CIS loader has not: Kaggle's competition files need a browser sign-in (`kaggle auth login`) and acceptance of
 the competition rules, which the saved dataset token cannot do. The real TabFormer download differs from what I
 first assumed in its filename (`credit_card_transactions-ibm_v2.csv`, next to a one-user sample and two files with
@@ -989,7 +1001,7 @@ the alert queue's rules (one decision per alert, closing needs a prior hold, no 
 | `test_no_leakage.py` | Strictly-prior feature computation on the 213k-row dataset |
 | `test_ieee_external.py`, `test_card_product_features.py`, `test_phase17_validation.py` | IEEE-CIS adapter, features and held-out evaluation |
 
-**Current result: 501 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
+**Current result: 504 passed, 16 skipped** (the skipped tests need the local IEEE-CIS files). Verified on a
 fresh clone: install, generate the data, build the frontend, run the suite. The suite takes about 90 seconds.
 
 **GitHub Actions CI** verifies on every push:

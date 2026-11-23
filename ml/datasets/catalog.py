@@ -58,7 +58,7 @@ DATASETS = {
         source="https://www.kaggle.com/datasets/ealaxi/paysim1",
         download="kaggle datasets download -d ealaxi/paysim1 -p data/raw/paysim --unzip",
         primary=("PS_*_log.csv", "paysim*.csv"), size="about 470 MB, 6.3 million rows",
-        loader=lambda paths, k, seed: load_paysim(paths[0], k),
+        loader=lambda paths, k, seed: load_paysim(paths[0], k, seed),
         notes="Poor fit: nearly every origin account appears once, so there is no customer history. "
               "Loadable for completeness; prepare refuses it unless --force."),
     "ieee": Dataset(

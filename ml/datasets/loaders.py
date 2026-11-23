@@ -167,13 +167,19 @@ PAYSIM_COLUMNS = ["step", "type", "amount", "nameOrig", "nameDest", "isFraud"]
 PAYSIM_START = pd.Timestamp("2017-11-01")             # PaySim has only an hour counter; this date is arbitrary
 
 
-def load_paysim(path, max_rows=None):
-    """Kaggle 'ealaxi/paysim1'. Loadable, but almost every origin account appears once (see profile())."""
+def load_paysim(path, max_rows=None, seed=0):
+    """
+    Kaggle 'ealaxi/paysim1'. Loadable, but almost every origin account appears once (see profile()).
+    `max_rows` samples rows at random across the whole period (the first N rows would cover only the first hours,
+    too short for any train/validation/test split). Reproducible for a given seed.
+    """
     _check_columns(path, PAYSIM_COLUMNS)
-    df = pd.read_csv(path, usecols=PAYSIM_COLUMNS, nrows=max_rows)
+    df = pd.read_csv(path, usecols=PAYSIM_COLUMNS)
     bad = ~(df["amount"] > 0)
     dropped = int(bad.sum())
     df = df[~bad]
+    if max_rows and max_rows < len(df):
+        df = df.sample(n=max_rows, random_state=seed).sort_index()
     out = _finalize(pd.DataFrame({
         "transaction_id": "", "customer_id": df["nameOrig"].astype(str), "merchant_id": df["nameDest"].astype(str),
         "merchant_category": df["type"].astype(str), "timestamp": PAYSIM_START + pd.to_timedelta(df["step"], unit="h"),

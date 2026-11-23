@@ -171,6 +171,18 @@ def test_paysim_maps_hours_to_timestamps_and_drops_zero_amounts(tmp_path):
     assert raw["is_fraud"].sum() == 6
 
 
+def test_paysim_row_sampling_spans_the_whole_period_and_is_reproducible(tmp_path):
+    """Taking the first N rows would cover only the first hours; sampling must reach across all of them."""
+    path = write_paysim(tmp_path / "paysim.csv", n=3000)
+    first, _ = load_paysim(path, max_rows=300, seed=1)
+    again, _ = load_paysim(path, max_rows=300, seed=1)
+    other, _ = load_paysim(path, max_rows=300, seed=2)
+    assert len(first) == 300 and first["transaction_id"].tolist() == again["transaction_id"].tolist()
+    full, _ = load_paysim(path)
+    assert (first["timestamp"].max() - first["timestamp"].min()) > 0.9 * (full["timestamp"].max() - full["timestamp"].min())
+    assert first["customer_id"].tolist() != other["customer_id"].tolist()          # the seed changes the sample
+
+
 # --------------------------------------------------------------------- IEEE
 
 def test_ieee_wrapper_returns_the_same_schema_with_naive_timestamps(tmp_path, monkeypatch):
